@@ -943,129 +943,129 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                 // Real-time two-way sync between this device and the others
                 // sharing the bucket configured above.
                 SliverToBoxAdapter(
-                child: SectionCard(
-                  padding: const EdgeInsets.all(12),
-                  radius: 18,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              l10n.backupPageS3AutoSync,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: AppFontWeights.semibold,
-                                color: cs.onSurface.withValues(alpha: 0.95),
+                  child: SectionCard(
+                    padding: const EdgeInsets.all(12),
+                    radius: 18,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                l10n.backupPageS3AutoSync,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: AppFontWeights.semibold,
+                                  color: cs.onSurface.withValues(alpha: 0.95),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    _ItemRow(
-                      label: l10n.backupPageS3SyncEnable,
-                      trailing: IosSwitch(
-                        value: _syncEnabled,
-                        onChanged: busy
-                            ? null
-                            : (v) async {
-                                setState(() => _syncEnabled = v);
-                                await _applySyncConfig(enabled: v);
-                              },
-                      ),
-                    ),
-                    _rowDivider(context),
-                    _ItemRow(
-                      label: l10n.backupPageS3SyncDeviceName,
-                      trailing: SizedBox(
-                        width: 420,
-                        child: TextField(
-                          controller: _syncDeviceName,
-                          enabled: !busy,
-                          style: const TextStyle(fontSize: 14),
-                          decoration: _deskInputDecoration(
-                            context,
-                          ).copyWith(hintText: l10n.backupPageS3SyncDeviceName),
-                          onChanged: (v) =>
-                              _applySyncConfig(deviceName: v.trim()),
+                          ],
                         ),
                       ),
-                    ),
-                    _rowDivider(context),
-                    _ItemRow(
-                      label:
-                          '${l10n.backupPageS3SyncInterval} (${l10n.backupPageS3SyncSeconds})',
-                      trailing: SizedBox(
-                        width: 420,
-                        child: TextField(
-                          controller: _syncInterval,
-                          enabled: !busy,
-                          keyboardType: TextInputType.number,
-                          style: const TextStyle(fontSize: 14),
-                          decoration: _deskInputDecoration(
-                            context,
-                          ).copyWith(hintText: '20'),
-                          onChanged: (v) => _applySyncConfig(
-                            intervalSeconds: int.tryParse(v.trim()),
+                      _ItemRow(
+                        label: l10n.backupPageS3SyncEnable,
+                        trailing: IosSwitch(
+                          value: _syncEnabled,
+                          onChanged: busy
+                              ? null
+                              : (v) async {
+                                  setState(() => _syncEnabled = v);
+                                  await _applySyncConfig(enabled: v);
+                                },
+                        ),
+                      ),
+                      _rowDivider(context),
+                      _ItemRow(
+                        label: l10n.backupPageS3SyncDeviceName,
+                        trailing: SizedBox(
+                          width: 420,
+                          child: TextField(
+                            controller: _syncDeviceName,
+                            enabled: !busy,
+                            style: const TextStyle(fontSize: 14),
+                            decoration: _deskInputDecoration(context).copyWith(
+                              hintText: l10n.backupPageS3SyncDeviceName,
+                            ),
+                            onChanged: (v) =>
+                                _applySyncConfig(deviceName: v.trim()),
                           ),
                         ),
                       ),
-                    ),
-                    _rowDivider(context),
-                    _ItemRow(
-                      label: l10n.backupPageS3SyncFiles,
-                      trailing: IosSwitch(
-                        value: _syncFiles,
-                        onChanged: busy
-                            ? null
-                            : (v) async {
-                                setState(() => _syncFiles = v);
-                                await _applySyncConfig(syncFiles: v);
-                              },
-                      ),
-                    ),
-                    _rowDivider(context),
-                    _ItemRow(
-                      label: l10n.backupPageS3AutoSync,
-                      trailing: Wrap(
-                        spacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          _DeskIosButton(
-                            label: l10n.backupPageS3SyncNow,
-                            filled: false,
-                            dense: true,
-                            onTap: busy
-                                ? () {}
-                                : () async {
-                                    await _saveS3Config();
-                                    if (!context.mounted) return;
-                                    final outcome = await syncVm.syncNow();
-                                    if (!context.mounted) return;
-                                    showAppSnackBar(
-                                      context,
-                                      message: outcome == null
-                                          ? (syncVm.lastError ??
-                                                l10n.backupPageS3SyncFailed)
-                                          : l10n.backupPageS3SyncDone,
-                                      type: outcome == null
-                                          ? NotificationType.error
-                                          : NotificationType.success,
-                                    );
-                                  },
+                      _rowDivider(context),
+                      _ItemRow(
+                        label:
+                            '${l10n.backupPageS3SyncInterval} (${l10n.backupPageS3SyncSeconds})',
+                        trailing: SizedBox(
+                          width: 420,
+                          child: TextField(
+                            controller: _syncInterval,
+                            enabled: !busy,
+                            keyboardType: TextInputType.number,
+                            style: const TextStyle(fontSize: 14),
+                            decoration: _deskInputDecoration(
+                              context,
+                            ).copyWith(hintText: '20'),
+                            onChanged: (v) => _applySyncConfig(
+                              intervalSeconds: int.tryParse(v.trim()),
+                            ),
                           ),
-                          _SyncStatusLabel(provider: syncVm),
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
+                      _rowDivider(context),
+                      _ItemRow(
+                        label: l10n.backupPageS3SyncFiles,
+                        trailing: IosSwitch(
+                          value: _syncFiles,
+                          onChanged: busy
+                              ? null
+                              : (v) async {
+                                  setState(() => _syncFiles = v);
+                                  await _applySyncConfig(syncFiles: v);
+                                },
+                        ),
+                      ),
+                      _rowDivider(context),
+                      _ItemRow(
+                        label: l10n.backupPageS3AutoSync,
+                        trailing: Wrap(
+                          spacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            _DeskIosButton(
+                              label: l10n.backupPageS3SyncNow,
+                              filled: false,
+                              dense: true,
+                              onTap: busy
+                                  ? () {}
+                                  : () async {
+                                      await _saveS3Config();
+                                      if (!context.mounted) return;
+                                      final outcome = await syncVm.syncNow();
+                                      if (!context.mounted) return;
+                                      showAppSnackBar(
+                                        context,
+                                        message: outcome == null
+                                            ? (syncVm.lastError ??
+                                                  l10n.backupPageS3SyncFailed)
+                                            : l10n.backupPageS3SyncDone,
+                                        type: outcome == null
+                                            ? NotificationType.error
+                                            : NotificationType.success,
+                                      );
+                                    },
+                            ),
+                            _SyncStatusLabel(provider: syncVm),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-                ],
               ],
+            ],
           ),
         ),
       ),
