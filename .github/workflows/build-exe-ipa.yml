@@ -176,6 +176,7 @@ jobs:
       - name: Prepare iOS sandbox artifacts
         run: |
           brew install meson ninja llvm lld
+          chmod +x ios/sandbox/*.sh
           ios/sandbox/ensure_artifacts.sh
 
       - name: Resolve dependencies
