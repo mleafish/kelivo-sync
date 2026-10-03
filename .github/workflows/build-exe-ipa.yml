@@ -19,6 +19,11 @@ on:
 permissions:
   contents: write
 
+# A newer push supersedes a build that is still running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # Matches pubspec.yaml's `flutter: ">=3.44.9"` / Dart ^3.12.1 requirement.
   FLUTTER_CHANNEL: 'master'
@@ -175,7 +180,10 @@ jobs:
 
       - name: Prepare iOS sandbox artifacts
         run: |
-          brew install meson ninja llvm lld
+          # libarchive is what makes the iSH build define its host `fakefsify`
+          # target (tools/meson.build only declares it when libarchive is
+          # found); without it ninja fails with "unknown target".
+          brew install meson ninja llvm lld libarchive pkg-config
           chmod +x ios/sandbox/*.sh
           ios/sandbox/ensure_artifacts.sh
 
