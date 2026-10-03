@@ -15,6 +15,7 @@ import '../../core/providers/backup_provider.dart';
 import '../../core/providers/backup_reminder_provider.dart';
 import '../../core/providers/local_snapshot_provider.dart';
 import '../../core/providers/s3_backup_provider.dart';
+import '../../core/providers/s3_sync_provider.dart';
 import '../../core/providers/settings_provider.dart';
 import '../../core/services/chat/chat_service.dart';
 import '../../core/services/backup/cherry_importer.dart';
@@ -55,9 +56,13 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
   late TextEditingController _s3Prefix;
   late TextEditingController _webDavUserAgent;
   late TextEditingController _s3UserAgent;
+  late TextEditingController _syncDeviceName;
+  late TextEditingController _syncInterval;
   bool _includeChats = true;
   bool _includeFiles = true;
   bool _s3PathStyle = true;
+  bool _syncEnabled = false;
+  bool _syncFiles = false;
   bool _remoteBackupDialogActive = false;
 
   @override
@@ -83,6 +88,14 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     _s3Prefix = TextEditingController(text: s3.prefix);
     _s3UserAgent = TextEditingController(text: s3.userAgent);
     _s3PathStyle = s3.pathStyle;
+
+    final sync = settings.s3SyncConfig;
+    _syncEnabled = sync.enabled;
+    _syncFiles = sync.syncFiles;
+    _syncDeviceName = TextEditingController(text: sync.deviceName);
+    _syncInterval = TextEditingController(
+      text: sync.intervalSeconds.toString(),
+    );
   }
 
   @override
@@ -100,7 +113,31 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     _s3Prefix.dispose();
     _webDavUserAgent.dispose();
     _s3UserAgent.dispose();
+    _syncDeviceName.dispose();
+    _syncInterval.dispose();
     super.dispose();
+  }
+
+  /// Applies a change to the real-time sync settings.
+  ///
+  /// The provider persists the config itself, which is also where a device id
+  /// is first assigned.
+  Future<void> _applySyncConfig({
+    bool? enabled,
+    String? deviceName,
+    int? intervalSeconds,
+    bool? syncFiles,
+  }) async {
+    final provider = context.read<S3SyncProvider>();
+    final current = provider.config;
+    await provider.updateConfig(
+      current.copyWith(
+        enabled: enabled,
+        deviceName: deviceName,
+        intervalSeconds: intervalSeconds?.clamp(10, 3600),
+        syncFiles: syncFiles,
+      ),
+    );
   }
 
   WebDavConfig _buildConfigFromForm() {
@@ -175,6 +212,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     final s3BackupProvider = context.read<S3BackupProvider>();
     await settings.setS3Config(cfg);
     s3BackupProvider.updateConfig(cfg);
+    context.read<S3SyncProvider>().updateS3Config(cfg);
   }
 
   Future<void> _applyS3Partial({
@@ -213,6 +251,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     );
     await settings.setS3Config(cfg);
     s3BackupProvider.updateConfig(cfg);
+    context.read<S3SyncProvider>().updateS3Config(cfg);
   }
 
   Future<bool> _runRemoteBackupTask({
@@ -887,6 +926,134 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                                     );
                                   },
                           ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 10)),
+
+              // Real-time two-way sync between this device and the others
+              // sharing the bucket configured above.
+              SliverToBoxAdapter(
+                child: SectionCard(
+                  padding: const EdgeInsets.all(12),
+                  radius: 18,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              l10n.backupPageS3AutoSync,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: AppFontWeights.semibold,
+                                color: cs.onSurface.withValues(alpha: 0.95),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _ItemRow(
+                      label: l10n.backupPageS3SyncEnable,
+                      trailing: IosSwitch(
+                        value: _syncEnabled,
+                        onChanged: busy
+                            ? null
+                            : (v) async {
+                                setState(() => _syncEnabled = v);
+                                await _applySyncConfig(enabled: v);
+                              },
+                      ),
+                    ),
+                    _rowDivider(context),
+                    _ItemRow(
+                      label: l10n.backupPageS3SyncDeviceName,
+                      trailing: SizedBox(
+                        width: 420,
+                        child: TextField(
+                          controller: _syncDeviceName,
+                          enabled: !busy,
+                          style: const TextStyle(fontSize: 14),
+                          decoration: _deskInputDecoration(context).copyWith(
+                            hintText: l10n.backupPageS3SyncDeviceName,
+                          ),
+                          onChanged: (v) =>
+                              _applySyncConfig(deviceName: v.trim()),
+                        ),
+                      ),
+                    ),
+                    _rowDivider(context),
+                    _ItemRow(
+                      label:
+                          '${l10n.backupPageS3SyncInterval} (${l10n.backupPageS3SyncSeconds})',
+                      trailing: SizedBox(
+                        width: 420,
+                        child: TextField(
+                          controller: _syncInterval,
+                          enabled: !busy,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontSize: 14),
+                          decoration: _deskInputDecoration(
+                            context,
+                          ).copyWith(hintText: '20'),
+                          onChanged: (v) => _applySyncConfig(
+                            intervalSeconds: int.tryParse(v.trim()),
+                          ),
+                        ),
+                      ),
+                    ),
+                    _rowDivider(context),
+                    _ItemRow(
+                      label: l10n.backupPageS3SyncFiles,
+                      trailing: IosSwitch(
+                        value: _syncFiles,
+                        onChanged: busy
+                            ? null
+                            : (v) async {
+                                setState(() => _syncFiles = v);
+                                await _applySyncConfig(syncFiles: v);
+                              },
+                      ),
+                    ),
+                    _rowDivider(context),
+                    _ItemRow(
+                      label: l10n.backupPageS3AutoSync,
+                      trailing: Wrap(
+                        spacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _DeskIosButton(
+                            label: l10n.backupPageS3SyncNow,
+                            filled: false,
+                            dense: true,
+                            onTap: busy
+                                ? () {}
+                                : () async {
+                                    final syncProvider = context
+                                        .read<S3SyncProvider>();
+                                    await _saveS3Config();
+                                    if (!context.mounted) return;
+                                    final outcome = await syncProvider.syncNow();
+                                    if (!context.mounted) return;
+                                    showAppSnackBar(
+                                      context,
+                                      message: outcome == null
+                                          ? (syncProvider.lastError ??
+                                                l10n.backupPageS3SyncFailed)
+                                          : l10n.backupPageS3SyncDone,
+                                      type: outcome == null
+                                          ? NotificationType.error
+                                          : NotificationType.success,
+                                    );
+                                  },
+                          ),
+                          _SyncStatusLabel(provider: context.watch<S3SyncProvider>()),
                         ],
                       ),
                     ),
@@ -2072,4 +2239,37 @@ InputDecoration _deskInputDecoration(BuildContext context) {
     ),
     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
   );
+}
+
+/// One-line summary of the auto-sync state, shown beside the manual button.
+class _SyncStatusLabel extends StatelessWidget {
+  const _SyncStatusLabel({required this.provider});
+
+  final S3SyncProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    final at = provider.lastSyncAt;
+    final String text;
+    if (provider.syncing) {
+      text = l10n.backupPageS3SyncNow;
+    } else if (at == null) {
+      text = l10n.backupPageS3SyncNever;
+    } else {
+      final local = at.toLocal();
+      String two(int n) => n.toString().padLeft(2, '0');
+      text =
+          '${l10n.backupPageS3SyncLastAt} '
+          '${two(local.hour)}:${two(local.minute)}';
+    }
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 13,
+        color: cs.onSurface.withValues(alpha: 0.6),
+      ),
+    );
+  }
 }

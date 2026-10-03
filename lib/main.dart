@@ -45,6 +45,7 @@ import 'features/backup/local_snapshot_scheduler.dart';
 import 'core/services/memory/memory_pipeline.dart';
 import 'core/services/memory/memory_repository.dart';
 import 'core/providers/s3_backup_provider.dart';
+import 'core/providers/s3_sync_provider.dart';
 import 'core/providers/backup_reminder_provider.dart';
 import 'core/providers/hotkey_provider.dart';
 import 'core/providers/workspace_provider.dart';
@@ -854,6 +855,24 @@ class MyApp extends StatelessWidget {
             businessPreferences: businessPreferences,
             initialConfig: ctx.read<SettingsProvider>().s3Config,
           ),
+        ),
+        ChangeNotifierProvider(
+          create: (ctx) {
+            final provider = S3SyncProvider(
+              chatService: ctx.read<ChatService>(),
+              businessRepository: databaseLease.businessRepository,
+              businessPreferences: businessPreferences,
+              initialS3Config: ctx.read<SettingsProvider>().s3Config,
+              initialConfig: ctx.read<SettingsProvider>().s3SyncConfig,
+              persist: (cfg) =>
+                  ctx.read<SettingsProvider>().setS3SyncConfig(cfg),
+              // Never reconcile the database out from under a reply the user
+              // is watching.
+              shouldSkip: () => ChatActions.hasAnyActiveGeneration,
+            );
+            provider.start();
+            return provider;
+          },
         ),
         ChangeNotifierProvider(
           create: (ctx) => LocalSnapshotProvider(

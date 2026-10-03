@@ -184,6 +184,80 @@ class S3Config {
   String toJsonString() => jsonEncode(toJson());
 }
 
+/// Configuration for real-time, bidirectional S3 sync between devices.
+///
+/// Connection details are shared with [S3Config]; this only carries what the
+/// sync engine adds on top: which device this install is, how often to check
+/// for remote changes, and how much data to move.
+class S3SyncConfig {
+  final bool enabled;
+  final String
+  deviceId; // stable per install, generated on first enable
+  final String deviceName; // user-facing label, e.g. "iPhone" / "PC"
+  final bool syncFiles; // include uploaded assets (images, files)
+  final int intervalSeconds; // how often to look for remote changes
+
+  const S3SyncConfig({
+    this.enabled = false,
+    this.deviceId = '',
+    this.deviceName = '',
+    this.syncFiles = false,
+    this.intervalSeconds = 20,
+  });
+
+  S3SyncConfig copyWith({
+    bool? enabled,
+    String? deviceId,
+    String? deviceName,
+    bool? syncFiles,
+    int? intervalSeconds,
+  }) {
+    return S3SyncConfig(
+      enabled: enabled ?? this.enabled,
+      deviceId: deviceId ?? this.deviceId,
+      deviceName: deviceName ?? this.deviceName,
+      syncFiles: syncFiles ?? this.syncFiles,
+      intervalSeconds: intervalSeconds ?? this.intervalSeconds,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'enabled': enabled,
+    'deviceId': deviceId,
+    'deviceName': deviceName,
+    'syncFiles': syncFiles,
+    'intervalSeconds': intervalSeconds,
+  };
+
+  static S3SyncConfig fromJson(Map<String, dynamic> json) {
+    final rawInterval = json['intervalSeconds'];
+    final interval = switch (rawInterval) {
+      int v => v,
+      num v => v.toInt(),
+      String v => int.tryParse(v.trim()) ?? 20,
+      _ => 20,
+    };
+    return S3SyncConfig(
+      enabled: json['enabled'] as bool? ?? false,
+      deviceId: (json['deviceId'] as String?)?.trim() ?? '',
+      deviceName: (json['deviceName'] as String?)?.trim() ?? '',
+      syncFiles: json['syncFiles'] as bool? ?? false,
+      intervalSeconds: interval.clamp(10, 3600),
+    );
+  }
+
+  static S3SyncConfig fromJsonString(String s) {
+    try {
+      final map = jsonDecode(s) as Map<String, dynamic>;
+      return S3SyncConfig.fromJson(map);
+    } catch (_) {
+      return const S3SyncConfig();
+    }
+  }
+
+  String toJsonString() => jsonEncode(toJson());
+}
+
 class BackupFileItem {
   final Uri href; // absolute
   final String displayName;

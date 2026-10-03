@@ -722,12 +722,17 @@ class S3BackupClient {
     await _writeManifest(cfg, next);
   }
 
-  Future<List<BackupFileItem>> _listBucketObjects(
+  /// Every object under [prefix], with the metadata a listing returns.
+  ///
+  /// Unlike [_listBucketObjects] this applies no `.zip` filter, so callers that
+  /// store sidecar objects (sync metadata, for instance) can see them.
+  Future<List<({String key, int size, DateTime? lastModified})>> _listBucketRaw(
     S3Config cfg, {
+    required String prefix,
     BackupCancelToken? cancelToken,
   }) async {
-    final prefix = _normalizePrefix(cfg.prefix);
-    final items = <BackupFileItem>[];
+    final normalized = _normalizePrefix(prefix);
+    final entries = <({String key, int size, DateTime? lastModified})>[];
     String? continuationToken;
 
     do {
@@ -738,7 +743,7 @@ class S3BackupClient {
         cfg,
         query: {
           'list-type': '2',
-          if (prefix.isNotEmpty) 'prefix': prefix,
+          if (normalized.isNotEmpty) 'prefix': normalized,
           'max-keys': '1000',
           if (continuationToken != null)
             'continuation-token': continuationToken,
@@ -756,23 +761,11 @@ class S3BackupClient {
         final sizeStr = c.getElement('Size', namespace: '*')?.innerText ?? '0';
         final mtimeStr =
             c.getElement('LastModified', namespace: '*')?.innerText ?? '';
-        final size = int.tryParse(sizeStr.trim()) ?? 0;
-        final mtime = _parseDateTime(mtimeStr);
-        final name = _displayNameFromKey(key);
-        if (!name.toLowerCase().endsWith('.zip')) continue;
-
-        items.add(
-          BackupFileItem(
-            href: Uri(
-              scheme: 's3',
-              host: cfg.bucket.trim(),
-              pathSegments: key.split('/').where((s) => s.isNotEmpty).toList(),
-            ),
-            displayName: name,
-            size: size,
-            lastModified: mtime,
-          ),
-        );
+        entries.add((
+          key: key,
+          size: int.tryParse(sizeStr.trim()) ?? 0,
+          lastModified: _parseDateTime(mtimeStr),
+        ));
       }
 
       final isTruncated =
@@ -790,6 +783,35 @@ class S3BackupClient {
           : null;
     } while (continuationToken != null);
 
+    return entries;
+  }
+
+  Future<List<BackupFileItem>> _listBucketObjects(
+    S3Config cfg, {
+    BackupCancelToken? cancelToken,
+  }) async {
+    final entries = await _listBucketRaw(
+      cfg,
+      prefix: cfg.prefix,
+      cancelToken: cancelToken,
+    );
+    final items = <BackupFileItem>[];
+    for (final entry in entries) {
+      final name = _displayNameFromKey(entry.key);
+      if (!name.toLowerCase().endsWith('.zip')) continue;
+      items.add(
+        BackupFileItem(
+          href: Uri(
+            scheme: 's3',
+            host: cfg.bucket.trim(),
+            pathSegments: entry.key.split('/').where((s) => s.isNotEmpty).toList(),
+          ),
+          displayName: name,
+          size: entry.size,
+          lastModified: entry.lastModified,
+        ),
+      );
+    }
     return items;
   }
 
@@ -1038,6 +1060,69 @@ class S3BackupClient {
       throw Exception('S3 delete failed: ${_extractErrorMessage(res)}');
     }
     await _removeManifestItem(cfg, key: key);
+  }
+
+  /// Object keys under [prefix], without the `.zip` filter [listObjects]
+  /// applies. Used by the sync engine to find device snapshots and metadata.
+  Future<List<String>> listKeys(
+    S3Config cfg, {
+    required String prefix,
+    BackupCancelToken? cancelToken,
+  }) async {
+    _validateConfigBasics(cfg);
+    final entries = await _listBucketRaw(
+      cfg,
+      prefix: prefix,
+      cancelToken: cancelToken,
+    );
+    return entries.map((e) => e.key).toList();
+  }
+
+  /// Reads a small object as UTF-8 text, or null when it does not exist.
+  ///
+  /// Intended for the JSON sidecars the sync engine keeps beside snapshots.
+  Future<String?> getObjectText(
+    S3Config cfg, {
+    required String key,
+    BackupCancelToken? cancelToken,
+  }) async {
+    _validateConfigBasics(cfg);
+    final res = await _sendSigned(
+      cfg,
+      method: 'GET',
+      uri: _buildObjectUri(cfg, key),
+      cancelToken: cancelToken,
+    );
+    if (_isMissingObjectResponse(res)) return null;
+    if (res.statusCode != 200) {
+      throw Exception('S3 read failed: ${_extractErrorMessage(res)}');
+    }
+    return utf8.decode(res.bodyBytes);
+  }
+
+  /// Writes a small object from memory.
+  ///
+  /// Unlike [uploadObject] this leaves the backup manifest alone: sync sidecars
+  /// are not backups and must not show up in the restore list.
+  Future<void> putBytes(
+    S3Config cfg, {
+    required String key,
+    required List<int> bytes,
+    String contentType = 'application/octet-stream',
+    BackupCancelToken? cancelToken,
+  }) async {
+    _validateConfigBasics(cfg);
+    final res = await _sendSigned(
+      cfg,
+      method: 'PUT',
+      uri: _buildObjectUri(cfg, key),
+      headers: {'content-type': contentType},
+      bodyBytes: bytes,
+      cancelToken: cancelToken,
+    );
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception('S3 write failed: ${_extractErrorMessage(res)}');
+    }
   }
 
   Future<List<BackupFileItem>> listObjects(

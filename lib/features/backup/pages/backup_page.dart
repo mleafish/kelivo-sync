@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:Kelivo/shared/widgets/ios_time_picker.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
@@ -18,6 +19,7 @@ import '../../../core/providers/backup_provider.dart';
 import '../../../core/providers/local_snapshot_provider.dart';
 import '../../../core/providers/backup_reminder_provider.dart';
 import '../../../core/providers/s3_backup_provider.dart';
+import '../../../core/providers/s3_sync_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/services/chat/chat_service.dart';
 import '../../../core/services/backup/backup_cancel_token.dart';
@@ -268,6 +270,7 @@ class _BackupPageState extends State<BackupPage> {
         builder: (context) {
           final vm = context.watch<BackupProvider>();
           final s3Vm = context.watch<S3BackupProvider>();
+          final syncVm = context.watch<S3SyncProvider>();
           final cfg = vm.config;
           final s3Cfg = s3Vm.config;
 
@@ -810,6 +813,18 @@ class _BackupPageState extends State<BackupPage> {
                       label: l10n.backupPageS3ServerSettings,
                       onTap: () =>
                           _showS3SettingsPage(context, settings, s3Vm, s3Cfg),
+                    ),
+                    _iosDivider(context),
+                    _iosNavRow(
+                      context,
+                      icon: Lucide.RefreshCw,
+                      label: l10n.backupPageS3AutoSync,
+                      detailText: syncVm.enabled
+                          ? (syncVm.syncing
+                                ? l10n.backupPageS3SyncNow
+                                : _syncStatusDetail(syncVm, l10n))
+                          : null,
+                      onTap: () => _showS3SyncSettingsPage(context, syncVm),
                     ),
                     _iosDivider(context),
                     _iosNavRow(
@@ -1542,6 +1557,24 @@ class _BackupPageState extends State<BackupPage> {
       ),
     );
   }
+
+  Future<void> _showS3SyncSettingsPage(
+    BuildContext context,
+    S3SyncProvider vm,
+  ) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => _S3SyncSettingsPage(vm: vm)),
+    );
+  }
+}
+
+/// One-line summary of the last sync, for the row that opens the settings.
+String _syncStatusDetail(S3SyncProvider vm, AppLocalizations l10n) {
+  final at = vm.lastSyncAt;
+  if (at == null) return l10n.backupPageS3SyncNever;
+  final local = at.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(local.hour)}:${two(local.minute)}';
 }
 
 class _LocalSnapshotMobileSection extends StatelessWidget {
@@ -1826,12 +1859,14 @@ class _InputRow extends StatelessWidget {
     this.hint,
     this.obscure = false,
     this.suffix,
+    this.keyboardType,
   });
   final String label;
   final TextEditingController controller;
   final String? hint;
   final bool obscure;
   final Widget? suffix;
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
@@ -1852,6 +1887,7 @@ class _InputRow extends StatelessWidget {
         TextField(
           controller: controller,
           obscureText: obscure,
+          keyboardType: keyboardType,
           textAlignVertical: TextAlignVertical.center,
           style: TextStyle(
             fontSize: 15,
@@ -2629,6 +2665,272 @@ class _WebDavSettingsPageState extends State<_WebDavSettingsPage> {
   }
 }
 
+class _S3SyncSettingsPage extends StatefulWidget {
+  const _S3SyncSettingsPage({required this.vm});
+
+  final S3SyncProvider vm;
+
+  @override
+  State<_S3SyncSettingsPage> createState() => _S3SyncSettingsPageState();
+}
+
+class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
+  late final TextEditingController _deviceNameCtrl;
+  late final TextEditingController _intervalCtrl;
+  late bool _enabled;
+  late bool _syncFiles;
+
+  static String _defaultDeviceName() {
+    if (defaultTargetPlatform == TargetPlatform.iOS) return 'iPhone';
+    if (defaultTargetPlatform == TargetPlatform.android) return 'Android';
+    if (defaultTargetPlatform == TargetPlatform.windows) return 'Windows PC';
+    if (defaultTargetPlatform == TargetPlatform.macOS) return 'Mac';
+    if (defaultTargetPlatform == TargetPlatform.linux) return 'Linux';
+    return 'Kelivo';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final cfg = widget.vm.config;
+    _enabled = cfg.enabled;
+    _syncFiles = cfg.syncFiles;
+    _deviceNameCtrl = TextEditingController(
+      text: cfg.deviceName.isEmpty ? _defaultDeviceName() : cfg.deviceName,
+    );
+    _intervalCtrl = TextEditingController(
+      text: cfg.intervalSeconds.toString(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _deviceNameCtrl.dispose();
+    _intervalCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    final vm = context.watch<S3SyncProvider>();
+
+    return Scaffold(
+      backgroundColor: cs.surface,
+      appBar: AppBar(
+        leading: Tooltip(
+          message: l10n.settingsPageBackButton,
+          child: _TactileIconButton(
+            icon: Lucide.ArrowLeft,
+            color: cs.onSurface,
+            size: 22,
+            onTap: () => Navigator.of(context).maybePop(),
+          ),
+        ),
+        title: Text(l10n.backupPageS3AutoSync),
+        actions: [
+          Tooltip(
+            message: l10n.backupPageSave,
+            child: _TactileIconButton(
+              icon: Lucide.Check,
+              color: cs.onSurface,
+              size: 22,
+              onTap: _save,
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  SectionCard(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                        child: Column(
+                          children: [
+                            _switchBlock(
+                              context,
+                              label: l10n.backupPageS3SyncEnable,
+                              value: _enabled,
+                              onChanged: (v) => setState(() => _enabled = v),
+                            ),
+                            const SizedBox(height: 12),
+                            _InputRow(
+                              label: l10n.backupPageS3SyncDeviceName,
+                              controller: _deviceNameCtrl,
+                              hint: l10n.backupPageS3SyncDeviceName,
+                            ),
+                            const SizedBox(height: 12),
+                            _InputRow(
+                              label:
+                                  '${l10n.backupPageS3SyncInterval} (${l10n.backupPageS3SyncSeconds})',
+                              controller: _intervalCtrl,
+                              hint: '20',
+                              keyboardType: TextInputType.number,
+                            ),
+                            const SizedBox(height: 12),
+                            _switchBlock(
+                              context,
+                              label: l10n.backupPageS3SyncFiles,
+                              value: _syncFiles,
+                              onChanged: (v) => setState(() => _syncFiles = v),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: _IosOutlineButton(
+                                label: l10n.backupPageS3SyncNow,
+                                onTap: () => unawaited(_syncNow(context)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _statusCard(context, vm, l10n),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: _IosFilledButton(
+                  label: l10n.backupPageSave,
+                  onTap: _save,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _switchBlock(
+    BuildContext context, {
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: context.appColors.surfaceFill,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.18)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                color: cs.onSurface.withValues(alpha: 0.85),
+              ),
+            ),
+          ),
+          IosSwitch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusCard(
+    BuildContext context,
+    S3SyncProvider vm,
+    AppLocalizations l10n,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    final at = vm.lastSyncAt;
+    final color = vm.lastError != null
+        ? cs.error
+        : cs.onSurface.withValues(alpha: 0.7);
+    final lines = <String>[
+      if (!vm.configured) l10n.backupPageS3SyncHint,
+      if (at != null)
+        '${l10n.backupPageS3SyncLastAt} ${_formatTime(at)}'
+      else
+        l10n.backupPageS3SyncNever,
+      if (vm.lastError != null) '${l10n.backupPageS3SyncFailed}: ${vm.lastError}',
+    ];
+    return SectionCard(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final line in lines)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    line,
+                    style: TextStyle(fontSize: 13, color: color),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _formatTime(DateTime value) {
+    final local = value.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  Future<void> _syncNow(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
+    final vm = widget.vm;
+    final outcome = await vm.syncNow();
+    if (!context.mounted) return;
+    if (outcome == null) {
+      showAppSnackBar(
+        context,
+        message: vm.lastError ?? l10n.backupPageS3SyncFailed,
+        type: NotificationType.error,
+      );
+      return;
+    }
+    showAppSnackBar(
+      context,
+      message: l10n.backupPageS3SyncDone,
+      type: NotificationType.success,
+    );
+  }
+
+  Future<void> _save() async {
+    final interval =
+        int.tryParse(_intervalCtrl.text.trim()) ??
+        widget.vm.config.intervalSeconds;
+    final next = widget.vm.config.copyWith(
+      enabled: _enabled,
+      deviceName: _deviceNameCtrl.text.trim(),
+      syncFiles: _syncFiles,
+      intervalSeconds: interval.clamp(10, 3600),
+    );
+    await widget.vm.updateConfig(next);
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+}
+
 class _S3SettingsPage extends StatefulWidget {
   const _S3SettingsPage({
     required this.settings,
@@ -2864,6 +3166,8 @@ class _S3SettingsPageState extends State<_S3SettingsPage> {
     );
     await widget.settings.setS3Config(newCfg);
     widget.vm.updateConfig(newCfg);
+    // Keep the background sync engine on the same connection.
+    context.read<S3SyncProvider>().updateS3Config(newCfg);
     if (mounted) {
       Navigator.of(context).pop();
     }
