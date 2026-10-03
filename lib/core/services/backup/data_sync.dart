@@ -1934,6 +1934,7 @@ class DataSync {
     BackupCancelToken? cancelToken,
     bool allowUnverifiedForwardCompatible = false,
     ForwardCompatibilityPrompt? onForwardCompatibility,
+    bool preferNewer = false,
   }) async {
     if (!await file.exists()) throw Exception('备份文件不存在');
     // Usually already answered by the caller, which had the file all along;
@@ -1950,6 +1951,7 @@ class DataSync {
       onProgress: onProgress,
       cancelToken: cancelToken,
       allowUnverifiedForwardCompatible: allowUnverified,
+      preferNewer: preferNewer,
     );
   }
 
@@ -3003,6 +3005,7 @@ class DataSync {
     BackupProgressSink? onProgress,
     BackupCancelToken? cancelToken,
     bool allowUnverifiedForwardCompatible = false,
+    bool preferNewer = false,
   }) async {
     _lastMergeReport = null;
     // Extract to temp using file-stream decoding to avoid loading the full ZIP
@@ -3147,6 +3150,7 @@ class DataSync {
           beginNonCancellableCommit();
           _lastMergeReport = await chatService.mergeDatabaseSnapshot(
             File(p.join(extractDir.path, _databaseEntryName)),
+            preferNewer: preferNewer,
           );
           // Chats-only: never leave local attachments marked available when
           // files were not restored (path collision on target is insufficient).

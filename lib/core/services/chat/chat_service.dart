@@ -2569,9 +2569,15 @@ class ChatService extends ChangeNotifier {
     }
   }
 
-  Future<BackupMergeReport> mergeDatabaseSnapshot(File snapshotFile) async {
+  Future<BackupMergeReport> mergeDatabaseSnapshot(
+    File snapshotFile, {
+    bool preferNewer = false,
+  }) async {
     if (!_initialized) await init();
-    final report = await _repo.mergeBackupSnapshot(snapshotFile);
+    final report = await _repo.mergeBackupSnapshot(
+      snapshotFile,
+      preferNewer: preferNewer,
+    );
     _clearPersistedMessageCache();
     await _backfillAssetReferencesForCurrentRoot();
     await _loadConversationsCache();

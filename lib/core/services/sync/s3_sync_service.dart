@@ -88,13 +88,11 @@ class S3SyncOutcome {
     this.pulledDevices = 0,
     this.pushed = false,
     this.merged = 0,
-    this.adopted = 0,
   });
 
   final int pulledDevices;
   final bool pushed;
   final int merged;
-  final int adopted;
 
   bool get didAnything => pulledDevices > 0 || pushed;
 }
@@ -103,15 +101,16 @@ class S3SyncOutcome {
 ///
 /// Each install publishes a full snapshot of itself at
 /// `<prefix>sync/devices/<deviceId>.zip`, alongside a small JSON sidecar
-/// describing it. On every pass a device first adopts or merges whatever other
+/// describing it. On every pass a device first reconciles whatever other
 /// devices published, then republishes its own snapshot if it changed.
 ///
 /// The local change signal is the database file's size and mtime, so any write
 /// to any table counts and nothing has to be threaded through the repository.
 /// What a device has already published is remembered as the signature it had
-/// at upload time; a pull that adopts or merges changes the local file, which
-/// makes the signature differ again and republishes the result. That single
-/// comparison is what makes the loop converge without a separate dirty flag.
+/// at upload time; applying a remote snapshot changes the local file, which
+/// makes the signature differ again and republishes the reconciled result. That
+/// single comparison is what makes the loop converge without a separate dirty
+/// flag.
 class S3SyncService {
   S3SyncService({
     required ChatService chatService,
@@ -400,12 +399,13 @@ class S3SyncService {
     return file;
   }
 
-  /// Applies one remote snapshot, choosing how to reconcile with local edits.
+  /// Applies one remote snapshot to the live database.
   ///
-  /// When this device has unpublished changes of its own, the two sides are
-  /// merged so neither is discarded; otherwise the remote snapshot simply
-  /// replaces the local one, which avoids manufacturing duplicate copies of
-  /// conversations that only one side ever edited.
+  /// Stays on the merge path rather than overwrite: an overwrite restore is
+  /// staged and only lands on the next launch, which is indistinguishable from
+  /// sync doing nothing. Merge applies immediately, and with `preferNewer` it
+  /// settles each conversation by `updated_at` instead of forking a duplicate
+  /// copy every time the other device has appended a message.
   Future<S3SyncOutcome> _applyRemote(
     S3Config cfg,
     S3SyncConfig sync,
@@ -416,42 +416,32 @@ class S3SyncService {
   }) async {
     File? file;
     try {
-      file = await _downloadSnapshot(
-        cfg,
-        meta,
-        onProgress: onProgress,
-        cancelToken: cancelToken,
-      );
-      final scope = WebDavConfig(
-        includeChats: true,
-        includeFiles: sync.syncFiles,
-      );
       if (localDirty) {
-        // Publish what this device has first, so a merge can never be the only
-        // place the local side of a conflict exists.
+        // Publish what this device has first, so a conversation the remote
+        // side is about to win is still recoverable from this device's
+        // snapshot rather than only existing in memory.
         await _pushIfChanged(
           cfg,
           sync,
           onProgress: onProgress,
           cancelToken: cancelToken,
         );
-        await _dataSync.restoreFromLocalFile(
-          file,
-          scope,
-          mode: RestoreMode.merge,
-          onProgress: onProgress,
-          cancelToken: cancelToken,
-        );
-        return const S3SyncOutcome(pulledDevices: 1, merged: 1);
       }
-      await _dataSync.restoreFromLocalFile(
-        file,
-        scope,
-        mode: RestoreMode.overwrite,
+      file = await _downloadSnapshot(
+        cfg,
+        meta,
         onProgress: onProgress,
         cancelToken: cancelToken,
       );
-      return const S3SyncOutcome(pulledDevices: 1, adopted: 1);
+      await _dataSync.restoreFromLocalFile(
+        file,
+        WebDavConfig(includeChats: true, includeFiles: sync.syncFiles),
+        mode: RestoreMode.merge,
+        preferNewer: true,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
+      return const S3SyncOutcome(pulledDevices: 1, merged: 1);
     } finally {
       try {
         if (file != null && await file.exists()) {
@@ -467,7 +457,7 @@ class S3SyncService {
 
   // ===== Public entry point =====
 
-  /// One full pass: adopt/merge remote changes, then publish local ones.
+  /// One full pass: reconcile remote changes, then publish local ones.
   Future<S3SyncOutcome> sync(
     S3Config cfg,
     S3SyncConfig sync, {
@@ -483,7 +473,6 @@ class S3SyncService {
       await _ensureStateLoaded();
       var pulledDevices = 0;
       var merged = 0;
-      var adopted = 0;
 
       final remote = await listDevices(cfg, cancelToken: cancelToken);
       for (final meta in remote) {
@@ -505,13 +494,12 @@ class S3SyncService {
         );
         pulledDevices += outcome.pulledDevices;
         merged += outcome.merged;
-        adopted += outcome.adopted;
         _applied[meta.deviceId] = meta.updatedAt;
         await _persistState();
       }
 
-      // Anything adopted or merged above changed the local database, so this
-      // republishes the reconciled result for the next device to see.
+      // Reconciling above changed the local database, so this republishes the
+      // result for the next device to see.
       final pushed = await _pushIfChanged(
         cfg,
         sync,
@@ -523,7 +511,6 @@ class S3SyncService {
         pulledDevices: pulledDevices,
         pushed: pushed,
         merged: merged,
-        adopted: adopted,
       );
     } finally {
       _running = false;

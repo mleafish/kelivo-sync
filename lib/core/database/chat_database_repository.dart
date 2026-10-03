@@ -5207,7 +5207,10 @@ class ChatDatabaseRepository {
     });
   }
 
-  Future<BackupMergeReport> mergeBackupSnapshot(File snapshotFile) async {
+  Future<BackupMergeReport> mergeBackupSnapshot(
+    File snapshotFile, {
+    bool preferNewer = false,
+  }) async {
     if (!await snapshotFile.exists()) {
       throw FileSystemException(
         'Snapshot database does not exist',
@@ -5230,6 +5233,9 @@ class ChatDatabaseRepository {
           "SELECT kind, id, sort_order, owner_id, payload, updated_at "
           "FROM merge_source.extension_entity_rows WHERE kind IN ('workspace', 'skill');",
         );
+        if (preferNewer) {
+          await _applySourceConversationTombstones();
+        }
         final sourceRows = await _db
             .customSelect(
               'SELECT id FROM merge_source.conversation_rows ORDER BY id;',
@@ -5257,13 +5263,25 @@ class ChatDatabaseRepository {
           if (sourceFingerprint == null) {
             throw StateError('merge_source_conversation');
           }
-          final existingFingerprint = await _conversationFingerprint(
+          var existingFingerprint = await _conversationFingerprint(
             'main',
             sourceId,
           );
           if (existingFingerprint == sourceFingerprint) {
             deduplicated += 1;
             continue;
+          }
+          // Sync reconciliation: the same conversation exists on both sides in
+          // different states. The newer side wins outright rather than forking
+          // the conversation, which is what makes a second device's copy track
+          // the first one instead of piling up duplicates on every message.
+          if (preferNewer && existingFingerprint != null) {
+            if (!await _isSourceConversationNewer('merge_source', sourceId)) {
+              skipped += 1;
+              continue;
+            }
+            await _deleteConversationRowsForSync(sourceId);
+            existingFingerprint = null;
           }
 
           final sourceMessageIds = await _messageIds('merge_source', sourceId);
@@ -5334,6 +5352,103 @@ class ChatDatabaseRepository {
       if (attached) {
         await _db.customStatement('DETACH DATABASE merge_source;');
       }
+    }
+  }
+
+  /// Whether the snapshot's copy of a conversation is newer than the local one.
+  ///
+  /// `updated_at` is the only ordering signal a conversation carries, and it is
+  /// exactly the one the app already maintains for its own chat list.
+  Future<bool> _isSourceConversationNewer(
+    String sourceSchema,
+    String id,
+  ) async {
+    final row = await _db
+        .customSelect(
+          'SELECT '
+          '(SELECT updated_at FROM $sourceSchema.conversation_rows WHERE id = ?1) AS source_updated_at, '
+          '(SELECT updated_at FROM main.conversation_rows WHERE id = ?1) AS local_updated_at;',
+          variables: [Variable<String>(id)],
+        )
+        .getSingleOrNull();
+    if (row == null) return false;
+    final source = row.data['source_updated_at'];
+    if (source is! num) return false;
+    final local = row.data['local_updated_at'];
+    if (local is! num) return true;
+    return source.toInt() > local.toInt();
+  }
+
+  /// Deletes a conversation and every row that hangs off it.
+  ///
+  /// Written out rather than left to the schema's cascades: several of those
+  /// are `DEFERRABLE INITIALLY DEFERRED`, so they would fire at commit time --
+  /// after the replacement rows with the same primary keys have been inserted.
+  Future<void> _deleteConversationRowsForSync(String id) async {
+    final messageRows = await _db
+        .customSelect(
+          'SELECT id FROM main.message_rows WHERE conversation_id = ?;',
+          variables: [Variable<String>(id)],
+        )
+        .get();
+    final messageIds = messageRows
+        .map((row) => row.read<String>('id'))
+        .toList(growable: false);
+    if (messageIds.isNotEmpty) {
+      await (_db.delete(
+        _db.messagePartRows,
+      )..where((t) => t.revisionId.isIn(messageIds))).go();
+      await (_db.delete(
+        _db.providerArtifactRows,
+      )..where((t) => t.revisionId.isIn(messageIds))).go();
+      await (_db.delete(
+        _db.messageAssetRows,
+      )..where((t) => t.revisionId.isIn(messageIds))).go();
+      await (_db.delete(
+        _db.assetReferenceDirtyRows,
+      )..where((t) => t.revisionId.isIn(messageIds))).go();
+      await (_db.delete(
+        _db.messagePromptRows,
+      )..where((t) => t.revisionId.isIn(messageIds))).go();
+    }
+    await (_db.delete(
+      _db.messageRows,
+    )..where((t) => t.conversationId.equals(id))).go();
+    await (_db.delete(
+      _db.conversationMcpServerRows,
+    )..where((t) => t.conversationId.equals(id))).go();
+    await (_db.delete(
+      _db.generationRunRows,
+    )..where((t) => t.conversationId.equals(id))).go();
+    await (_db.delete(_db.conversationRows)..where((t) => t.id.equals(id))).go();
+  }
+
+  /// Propagates conversations deleted on another device.
+  ///
+  /// [deleteConversation] has always written these tombstones so that a delete
+  /// could outlive the row it described; this is the reader it was written for.
+  /// A tombstone loses to a locally edited conversation that is newer than it,
+  /// so an edit made after the delete is not silently thrown away.
+  Future<void> _applySourceConversationTombstones() async {
+    final rows = await _db
+        .customSelect(
+          "SELECT entity_id, deleted_at FROM merge_source.tombstone_rows "
+          "WHERE scope = ?;",
+          variables: [Variable<String>(tombstoneScopeConversation)],
+        )
+        .get();
+    for (final row in rows) {
+      final id = row.read<String>('entity_id');
+      final deletedAt = row.read<int>('deleted_at');
+      final local = await _db
+          .customSelect(
+            'SELECT updated_at FROM main.conversation_rows WHERE id = ?;',
+            variables: [Variable<String>(id)],
+          )
+          .getSingleOrNull();
+      if (local == null) continue;
+      if (local.read<int>('updated_at') > deletedAt) continue;
+      await _deleteConversationRowsForSync(id);
     }
   }
 
