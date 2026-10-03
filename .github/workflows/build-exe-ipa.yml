@@ -29,6 +29,66 @@ env:
   FLUTTER_CHANNEL: 'master'
 
 jobs:
+  # Runs the repository's own pre-commit gates from AGENTS.md. Also captures
+  # the regenerated localizations and any formatting the source needs, since
+  # neither can be produced on a Windows checkout without the toolchain.
+  checks:
+    name: Analyze, format and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Matches pr-check.yml, which is the build whose generated files and
+      # formatting this needs to agree with.
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+
+      - name: Write secrets fallback
+        shell: bash
+        run: |
+          mkdir -p lib/secrets
+          cat > lib/secrets/fallback.dart <<'EOF'
+          const String siliconflowFallbackKey = '${{ secrets.SILICONFLOW_KEY }}';
+          EOF
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate localizations
+        run: flutter gen-l10n
+
+      - name: Capture formatting and localization diffs
+        run: |
+          dart format lib test
+          { git diff -- lib/l10n > l10n.patch; } || true
+          { git diff > format.patch; } || true
+          echo "l10n.patch: $(wc -l < l10n.patch) lines"
+          echo "format.patch: $(wc -l < format.patch) lines"
+
+      - name: Upload generated diffs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-diffs
+          path: |
+            l10n.patch
+            format.patch
+          if-no-files-found: ignore
+
+      - name: Analyze
+        run: dart analyze --fatal-infos lib test integration_test
+
+      - name: Test
+        run: flutter test
+
   windows:
     name: Windows EXE
     runs-on: windows-latest
