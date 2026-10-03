@@ -1,0 +1,216 @@
+name: Build Windows EXE and iOS IPA
+
+# Builds the two artifacts this fork targets: a Windows installer/portable EXE
+# and an unsigned iOS IPA. Everything else the upstream repository builds
+# (Android, macOS, Linux) is deliberately left out.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'GitHub Release tag to attach the artifacts to (optional)'
+        required: false
+        default: ''
+        type: string
+  push:
+    branches: [master, main]
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  # Matches pubspec.yaml's `flutter: ">=3.44.9"` / Dart ^3.12.1 requirement.
+  FLUTTER_CHANNEL: 'master'
+
+jobs:
+  windows:
+    name: Windows EXE
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      # lib/secrets/fallback.dart is gitignored upstream, so every job that
+      # compiles the app has to recreate it before `pub get`.
+      - name: Write secrets fallback
+        shell: bash
+        run: |
+          mkdir -p lib/secrets
+          cat > lib/secrets/fallback.dart <<'EOF'
+          const String siliconflowFallbackKey = '${{ secrets.SILICONFLOW_KEY }}';
+          EOF
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate localizations
+        run: flutter gen-l10n
+
+      - name: Read version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path pubspec.yaml -Pattern "^version:" | ForEach-Object { $_.Line.Split(":")[1].Trim() })
+          "VERSION=$version" >> $env:GITHUB_ENV
+          Write-Host "Version: $version"
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "Kelivo_windows_$env:VERSION.zip"
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build installer EXE
+        shell: pwsh
+        run: |
+          $issContent = @"
+          #define MyAppName "Kelivo"
+          #define MyAppVersion "$env:VERSION"
+          #define MyAppExeName "kelivo.exe"
+
+          [Setup]
+          AppId={{A7B8C9D0-E1F2-4A5B-8C9D-0E1F2A3B4C5D}
+          AppName={#MyAppName}
+          AppVersion={#MyAppVersion}
+          DefaultDirName={autopf}\{#MyAppName}
+          DefaultGroupName={#MyAppName}
+          OutputDir=.
+          OutputBaseFilename=Kelivo_windows_{#MyAppVersion}_setup
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesInstallIn64BitMode=x64
+          ArchitecturesAllowed=x64
+          UninstallDisplayIcon={app}\{#MyAppExeName}
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"
+
+          [Files]
+          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+          Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+          "@
+          $issContent | Out-File -FilePath "installer.iss" -Encoding utf8
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer.iss"
+
+      - name: Upload Windows EXE (installer)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kelivo-Windows-EXE
+          path: Kelivo_windows_*_setup.exe
+          if-no-files-found: error
+
+      - name: Upload Windows portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kelivo-Windows-ZIP
+          path: Kelivo_windows_*.zip
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          files: |
+            Kelivo_windows_*_setup.exe
+            Kelivo_windows_*.zip
+
+  ios:
+    name: iOS IPA
+    runs-on: macos-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Write secrets fallback
+        shell: bash
+        run: |
+          mkdir -p lib/secrets
+          cat > lib/secrets/fallback.dart <<'EOF'
+          const String siliconflowFallbackKey = '${{ secrets.SILICONFLOW_KEY }}';
+          EOF
+
+      # The iOS runner embeds an Alpine rootfs and a small Linux emulator; both
+      # are built from source here and cached between runs.
+      - name: Cache iOS sandbox artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/sandbox/build
+            ios/sandbox/resources/alpine-rootfs.zip
+            ios/sandbox/resources/libvdso.so.elf
+          key: ${{ runner.os }}-${{ runner.arch }}-ish-sandbox-${{ hashFiles('ios/sandbox/build_ish.sh', 'ios/sandbox/ensure_artifacts.sh', 'ios/sandbox/patches/*.patch', 'ios/sandbox/prepare_alpine_rootfs.sh', 'ios/sandbox/resources/VERSION') }}
+
+      - name: Prepare iOS sandbox artifacts
+        run: |
+          brew install meson ninja llvm lld
+          ios/sandbox/ensure_artifacts.sh
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate localizations
+        run: flutter gen-l10n
+
+      - name: Read version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Version: $VERSION"
+
+      # Unsigned on purpose: signing needs an Apple team, a certificate and a
+      # provisioning profile, none of which exist for this fork.
+      - name: Build iOS (unsigned)
+        run: |
+          flutter build ios --release --no-codesign
+          cd build/ios/iphoneos
+          rm -rf Payload
+          mkdir Payload
+          cp -R Runner.app Payload/
+          zip -qry ../../../Kelivo_ios_${VERSION}.ipa Payload
+
+      - name: Upload iOS IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kelivo-iOS-IPA
+          path: Kelivo_ios_*.ipa
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          files: Kelivo_ios_*.ipa
