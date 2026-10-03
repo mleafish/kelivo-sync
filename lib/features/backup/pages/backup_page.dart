@@ -2681,11 +2681,11 @@ class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
   late bool _syncFiles;
 
   static String _defaultDeviceName() {
-    if (defaultTargetPlatform == TargetPlatform.iOS) return 'iPhone';
-    if (defaultTargetPlatform == TargetPlatform.android) return 'Android';
-    if (defaultTargetPlatform == TargetPlatform.windows) return 'Windows PC';
-    if (defaultTargetPlatform == TargetPlatform.macOS) return 'Mac';
-    if (defaultTargetPlatform == TargetPlatform.linux) return 'Linux';
+    if (Platform.isIOS) return 'iPhone';
+    if (Platform.isAndroid) return 'Android';
+    if (Platform.isWindows) return 'Windows PC';
+    if (Platform.isMacOS) return 'Mac';
+    if (Platform.isLinux) return 'Linux';
     return 'Kelivo';
   }
 
