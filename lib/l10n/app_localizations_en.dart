@@ -2084,6 +2084,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String get backupPageS3PathStyle => 'Path-style addressing';
 
   @override
+  String get backupPageS3AutoSync => 'Auto Sync';
+
+  @override
+  String get backupPageS3SyncEnable => 'Enable auto sync';
+
+  @override
+  String get backupPageS3SyncDeviceName => 'Device name';
+
+  @override
+  String get backupPageS3SyncInterval => 'Check interval';
+
+  @override
+  String get backupPageS3SyncSeconds => 'seconds';
+
+  @override
+  String get backupPageS3SyncFiles => 'Include files and images';
+
+  @override
+  String get backupPageS3SyncNow => 'Sync now';
+
+  @override
+  String get backupPageS3SyncLastAt => 'Last synced';
+
+  @override
+  String get backupPageS3SyncNever => 'Not yet synced';
+
+  @override
+  String get backupPageS3SyncFailed => 'Sync failed';
+
+  @override
+  String get backupPageS3SyncDone => 'Sync complete';
+
+  @override
+  String get backupPageS3SyncHint => 'Uses the S3 settings above';
+
+  @override
   String get backupPageUserAgent => 'User-Agent';
 
   @override

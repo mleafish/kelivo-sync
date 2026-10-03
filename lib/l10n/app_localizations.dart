@@ -3904,6 +3904,78 @@ abstract class AppLocalizations {
   /// **'Path-style addressing'**
   String get backupPageS3PathStyle;
 
+  /// No description provided for @backupPageS3AutoSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto Sync'**
+  String get backupPageS3AutoSync;
+
+  /// No description provided for @backupPageS3SyncEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable auto sync'**
+  String get backupPageS3SyncEnable;
+
+  /// No description provided for @backupPageS3SyncDeviceName.
+  ///
+  /// In en, this message translates to:
+  /// **'Device name'**
+  String get backupPageS3SyncDeviceName;
+
+  /// No description provided for @backupPageS3SyncInterval.
+  ///
+  /// In en, this message translates to:
+  /// **'Check interval'**
+  String get backupPageS3SyncInterval;
+
+  /// No description provided for @backupPageS3SyncSeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'seconds'**
+  String get backupPageS3SyncSeconds;
+
+  /// No description provided for @backupPageS3SyncFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Include files and images'**
+  String get backupPageS3SyncFiles;
+
+  /// No description provided for @backupPageS3SyncNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync now'**
+  String get backupPageS3SyncNow;
+
+  /// No description provided for @backupPageS3SyncLastAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Last synced'**
+  String get backupPageS3SyncLastAt;
+
+  /// No description provided for @backupPageS3SyncNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Not yet synced'**
+  String get backupPageS3SyncNever;
+
+  /// No description provided for @backupPageS3SyncFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync failed'**
+  String get backupPageS3SyncFailed;
+
+  /// No description provided for @backupPageS3SyncDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync complete'**
+  String get backupPageS3SyncDone;
+
+  /// No description provided for @backupPageS3SyncHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Uses the S3 settings above'**
+  String get backupPageS3SyncHint;
+
   /// No description provided for @backupPageUserAgent.
   ///
   /// In en, this message translates to:

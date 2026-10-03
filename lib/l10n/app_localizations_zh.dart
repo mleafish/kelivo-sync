@@ -2011,6 +2011,42 @@ class AppLocalizationsZh extends AppLocalizations {
   String get backupPageS3PathStyle => '路径风格（Path-style）';
 
   @override
+  String get backupPageS3AutoSync => '自动同步';
+
+  @override
+  String get backupPageS3SyncEnable => '启用自动同步';
+
+  @override
+  String get backupPageS3SyncDeviceName => '设备名称';
+
+  @override
+  String get backupPageS3SyncInterval => '检查间隔';
+
+  @override
+  String get backupPageS3SyncSeconds => '秒';
+
+  @override
+  String get backupPageS3SyncFiles => '包含文件和图片';
+
+  @override
+  String get backupPageS3SyncNow => '立即同步';
+
+  @override
+  String get backupPageS3SyncLastAt => '上次同步';
+
+  @override
+  String get backupPageS3SyncNever => '尚未同步';
+
+  @override
+  String get backupPageS3SyncFailed => '同步失败';
+
+  @override
+  String get backupPageS3SyncDone => '同步完成';
+
+  @override
+  String get backupPageS3SyncHint => '使用上方配置的 S3 服务器';
+
+  @override
   String get backupPageUserAgent => 'User-Agent';
 
   @override

@@ -2698,9 +2698,7 @@ class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
     _deviceNameCtrl = TextEditingController(
       text: cfg.deviceName.isEmpty ? _defaultDeviceName() : cfg.deviceName,
     );
-    _intervalCtrl = TextEditingController(
-      text: cfg.intervalSeconds.toString(),
-    );
+    _intervalCtrl = TextEditingController(text: cfg.intervalSeconds.toString());
   }
 
   @override
@@ -2863,7 +2861,8 @@ class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
         '${l10n.backupPageS3SyncLastAt} ${_formatTime(at)}'
       else
         l10n.backupPageS3SyncNever,
-      if (vm.lastError != null) '${l10n.backupPageS3SyncFailed}: ${vm.lastError}',
+      if (vm.lastError != null)
+        '${l10n.backupPageS3SyncFailed}: ${vm.lastError}',
     ];
     return SectionCard(
       children: [
@@ -3149,6 +3148,9 @@ class _S3SettingsPageState extends State<_S3SettingsPage> {
   }
 
   Future<void> _save() async {
+    // Read the sync engine before the first await: it is the only context use
+    // in this method that would otherwise sit past an async gap.
+    final syncProvider = context.read<S3SyncProvider>();
     final newCfg = widget.cfg.copyWith(
       endpoint: _endpointCtrl.text.trim(),
       region: _regionCtrl.text.trim().isEmpty
@@ -3167,7 +3169,7 @@ class _S3SettingsPageState extends State<_S3SettingsPage> {
     await widget.settings.setS3Config(newCfg);
     widget.vm.updateConfig(newCfg);
     // Keep the background sync engine on the same connection.
-    context.read<S3SyncProvider>().updateS3Config(newCfg);
+    syncProvider.updateS3Config(newCfg);
     if (mounted) {
       Navigator.of(context).pop();
     }

@@ -210,9 +210,10 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     final cfg = _buildS3ConfigFromForm();
     final settings = context.read<SettingsProvider>();
     final s3BackupProvider = context.read<S3BackupProvider>();
+    final syncProvider = context.read<S3SyncProvider>();
     await settings.setS3Config(cfg);
     s3BackupProvider.updateConfig(cfg);
-    context.read<S3SyncProvider>().updateS3Config(cfg);
+    syncProvider.updateS3Config(cfg);
   }
 
   Future<void> _applyS3Partial({
@@ -230,6 +231,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
   }) async {
     final settings = context.read<SettingsProvider>();
     final s3BackupProvider = context.read<S3BackupProvider>();
+    final syncProvider = context.read<S3SyncProvider>();
     final cfg = S3Config(
       endpoint: endpoint ?? _s3Endpoint.text.trim(),
       region:
@@ -251,7 +253,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     );
     await settings.setS3Config(cfg);
     s3BackupProvider.updateConfig(cfg);
-    context.read<S3SyncProvider>().updateS3Config(cfg);
+    syncProvider.updateS3Config(cfg);
   }
 
   Future<bool> _runRemoteBackupTask({
@@ -980,9 +982,9 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                           controller: _syncDeviceName,
                           enabled: !busy,
                           style: const TextStyle(fontSize: 14),
-                          decoration: _deskInputDecoration(context).copyWith(
-                            hintText: l10n.backupPageS3SyncDeviceName,
-                          ),
+                          decoration: _deskInputDecoration(
+                            context,
+                          ).copyWith(hintText: l10n.backupPageS3SyncDeviceName),
                           onChanged: (v) =>
                               _applySyncConfig(deviceName: v.trim()),
                         ),
@@ -1039,7 +1041,8 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                                         .read<S3SyncProvider>();
                                     await _saveS3Config();
                                     if (!context.mounted) return;
-                                    final outcome = await syncProvider.syncNow();
+                                    final outcome = await syncProvider
+                                        .syncNow();
                                     if (!context.mounted) return;
                                     showAppSnackBar(
                                       context,
@@ -1053,7 +1056,9 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                                     );
                                   },
                           ),
-                          _SyncStatusLabel(provider: context.watch<S3SyncProvider>()),
+                          _SyncStatusLabel(
+                            provider: context.watch<S3SyncProvider>(),
+                          ),
                         ],
                       ),
                     ),

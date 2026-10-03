@@ -191,8 +191,7 @@ class S3Config {
 /// for remote changes, and how much data to move.
 class S3SyncConfig {
   final bool enabled;
-  final String
-  deviceId; // stable per install, generated on first enable
+  final String deviceId; // stable per install, generated on first enable
   final String deviceName; // user-facing label, e.g. "iPhone" / "PC"
   final bool syncFiles; // include uploaded assets (images, files)
   final int intervalSeconds; // how often to look for remote changes

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:uuid/uuid.dart';
 
@@ -24,10 +23,10 @@ class S3SyncProvider extends ChangeNotifier with WidgetsBindingObserver {
     required ChatService chatService,
     required BusinessRepository businessRepository,
     required BusinessPreferences businessPreferences,
-    required Future<void> Function(S3SyncConfig) persist,
+    required this._persist,
     S3Config? initialS3Config,
     S3SyncConfig? initialConfig,
-    bool Function()? shouldSkip,
+    this._shouldSkip,
     @visibleForTesting S3SyncService? debugService,
   }) : _service =
            debugService ??
@@ -36,10 +35,8 @@ class S3SyncProvider extends ChangeNotifier with WidgetsBindingObserver {
              businessRepository: businessRepository,
              businessPreferences: businessPreferences,
            ),
-       _persist = persist,
        _s3Config = initialS3Config ?? const S3Config(),
-       _config = initialConfig ?? const S3SyncConfig(),
-       _shouldSkip = shouldSkip;
+       _config = initialConfig ?? const S3SyncConfig();
 
   final S3SyncService _service;
   final Future<void> Function(S3SyncConfig) _persist;

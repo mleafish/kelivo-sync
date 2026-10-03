@@ -116,15 +116,14 @@ class S3SyncService {
     required ChatService chatService,
     required BusinessRepository businessRepository,
     required BusinessPreferences businessPreferences,
-    S3BackupClient client = const S3BackupClient(),
+    this._client = const S3BackupClient(),
   }) : _dataSync = DataSync(
          chatService: chatService,
          businessRepository: businessRepository,
          businessPreferences: businessPreferences,
        ),
        _chatService = chatService,
-       _preferences = businessPreferences,
-       _client = client;
+       _preferences = businessPreferences;
 
   static const String _stateKey = 's3_sync_state_v1';
   static const String _devicesFolder = 'devices/';
@@ -172,7 +171,8 @@ class S3SyncService {
 
   Future<void> _persistState() async {
     final payload = jsonEncode({
-      if (_publishedSignature != null) 'publishedSignature': _publishedSignature,
+      if (_publishedSignature != null)
+        'publishedSignature': _publishedSignature,
       if (_publishedSha != null) 'publishedSha': _publishedSha,
       'applied': {
         for (final entry in _applied.entries)
@@ -193,7 +193,8 @@ class S3SyncService {
     return s;
   }
 
-  static String _syncRoot(S3Config cfg) => '${_prefixWithSlash(cfg.prefix)}sync/';
+  static String _syncRoot(S3Config cfg) =>
+      '${_prefixWithSlash(cfg.prefix)}sync/';
 
   static String _devicesPrefix(S3Config cfg) =>
       '${_syncRoot(cfg)}$_devicesFolder';

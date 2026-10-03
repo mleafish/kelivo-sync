@@ -804,7 +804,10 @@ class S3BackupClient {
           href: Uri(
             scheme: 's3',
             host: cfg.bucket.trim(),
-            pathSegments: entry.key.split('/').where((s) => s.isNotEmpty).toList(),
+            pathSegments: entry.key
+                .split('/')
+                .where((s) => s.isNotEmpty)
+                .toList(),
           ),
           displayName: name,
           size: entry.size,

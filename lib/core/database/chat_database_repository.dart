@@ -5420,7 +5420,9 @@ class ChatDatabaseRepository {
     await (_db.delete(
       _db.generationRunRows,
     )..where((t) => t.conversationId.equals(id))).go();
-    await (_db.delete(_db.conversationRows)..where((t) => t.id.equals(id))).go();
+    await (_db.delete(
+      _db.conversationRows,
+    )..where((t) => t.id.equals(id))).go();
   }
 
   /// Propagates conversations deleted on another device.
