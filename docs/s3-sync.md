@@ -78,6 +78,12 @@ not silently discard newer work.
   syncs, the older edit is discarded. Before a device reconciles anything it
   uploads its own state first, so the losing side is at least still present in
   that device's published snapshot.
+- **Which side is "newer" comes from each device's own clock**, because
+  `conversation_rows.updated_at` is written locally when a message is appended.
+  Two devices whose clocks disagree by more than the gap between edits can
+  therefore settle a conversation the wrong way. Phone and desktop clocks are
+  normally NTP-synced to well under a second, so this only matters if a clock is
+  badly wrong.
 - **Sync is foreground-only on iOS.** The system suspends the periodic timer
   while the app is in the background; a pass runs as soon as it is reopened.
 - **Attachments are opt-in.** *Include files and images* off (the default) keeps

@@ -270,7 +270,9 @@ class _BackupPageState extends State<BackupPage> {
         builder: (context) {
           final vm = context.watch<BackupProvider>();
           final s3Vm = context.watch<S3BackupProvider>();
-          final syncVm = context.watch<S3SyncProvider>();
+          // Auto sync is optional: this page is also built on its own, without
+          // a sync engine above it.
+          final syncVm = context.watch<S3SyncProvider?>();
           final cfg = vm.config;
           final s3Cfg = s3Vm.config;
 
@@ -814,18 +816,20 @@ class _BackupPageState extends State<BackupPage> {
                       onTap: () =>
                           _showS3SettingsPage(context, settings, s3Vm, s3Cfg),
                     ),
-                    _iosDivider(context),
-                    _iosNavRow(
-                      context,
-                      icon: Lucide.RefreshCw,
-                      label: l10n.backupPageS3AutoSync,
-                      detailText: syncVm.enabled
-                          ? (syncVm.syncing
-                                ? l10n.backupPageS3SyncNow
-                                : _syncStatusDetail(syncVm, l10n))
-                          : null,
-                      onTap: () => _showS3SyncSettingsPage(context, syncVm),
-                    ),
+                    if (syncVm != null) ...[
+                      _iosDivider(context),
+                      _iosNavRow(
+                        context,
+                        icon: Lucide.RefreshCw,
+                        label: l10n.backupPageS3AutoSync,
+                        detailText: syncVm.enabled
+                            ? (syncVm.syncing
+                                  ? l10n.backupPageS3SyncNow
+                                  : _syncStatusDetail(syncVm, l10n))
+                            : null,
+                        onTap: () => _showS3SyncSettingsPage(context, syncVm),
+                      ),
+                    ],
                     _iosDivider(context),
                     _iosNavRow(
                       context,
@@ -2712,7 +2716,9 @@ class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
-    final vm = context.watch<S3SyncProvider>();
+    // Prefer the live engine so status changes rebuild the page, but fall back
+    // to the instance this page was opened with.
+    final vm = context.watch<S3SyncProvider?>() ?? widget.vm;
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -3150,7 +3156,7 @@ class _S3SettingsPageState extends State<_S3SettingsPage> {
   Future<void> _save() async {
     // Read the sync engine before the first await: it is the only context use
     // in this method that would otherwise sit past an async gap.
-    final syncProvider = context.read<S3SyncProvider>();
+    final syncProvider = Provider.of<S3SyncProvider?>(context, listen: false);
     final newCfg = widget.cfg.copyWith(
       endpoint: _endpointCtrl.text.trim(),
       region: _regionCtrl.text.trim().isEmpty
@@ -3169,7 +3175,7 @@ class _S3SettingsPageState extends State<_S3SettingsPage> {
     await widget.settings.setS3Config(newCfg);
     widget.vm.updateConfig(newCfg);
     // Keep the background sync engine on the same connection.
-    syncProvider.updateS3Config(newCfg);
+    syncProvider?.updateS3Config(newCfg);
     if (mounted) {
       Navigator.of(context).pop();
     }
