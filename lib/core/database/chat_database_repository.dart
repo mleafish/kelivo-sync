@@ -5454,6 +5454,52 @@ class ChatDatabaseRepository {
     }
   }
 
+  /// Raw SQL surface for the sync engine.
+  ///
+  /// Sync works on whole tables named at runtime, which the typed query
+  /// builders cannot express. Keeping the statements here rather than handing
+  /// the database out means the schema still has exactly one owner.
+  ///
+  /// Note that the engine must not use `INSERT OR REPLACE`: replacing a
+  /// `conversation_rows` or `message_rows` row deletes it first, and the
+  /// schema's cascades would take every message hanging off it along with it.
+  Future<List<Map<String, Object?>>> syncSelect(
+    String sql, [
+    List<Object?> arguments = const <Object?>[],
+  ]) async {
+    final rows = await _db
+        .customSelect(sql, variables: _syncVariables(arguments))
+        .get();
+    return [for (final row in rows) row.data];
+  }
+
+  Future<int> syncExecute(
+    String sql, [
+    List<Object?> arguments = const <Object?>[],
+  ]) {
+    return _db.customUpdate(sql, variables: _syncVariables(arguments));
+  }
+
+  Future<T> syncTransaction<T>(Future<T> Function() action) =>
+      _db.transaction(action);
+
+  /// Binds a Dart value for a raw statement.
+  ///
+  /// Drift's [Variable] is typed, but a synced payload is untyped JSON, so the
+  /// type is recovered from the value at the last moment.
+  static List<Variable<Object>> _syncVariables(List<Object?> arguments) => [
+    for (final argument in arguments) _syncVariable(argument),
+  ];
+
+  static Variable<Object> _syncVariable(Object? value) {
+    if (value == null) return const Variable<String>(null);
+    if (value is int) return Variable<int>(value);
+    if (value is double) return Variable<double>(value);
+    if (value is bool) return Variable<bool>(value);
+    if (value is List<int>) return Variable<List<int>>(value);
+    return Variable<String>(value.toString());
+  }
+
   /// Chats-only restore/merge: mark local attachment parts unavailable unless
   /// remote/data. Does not reuse path/hash coincidence from asset_rows.
   Future<int> recomputeAttachmentAvailabilityForConversations({
