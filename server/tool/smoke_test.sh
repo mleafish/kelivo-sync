@@ -50,6 +50,12 @@ if [ -z "$EXTERNAL_BASE" ]; then
 EOF
   "$BIN" --config "$WORKDIR/config.json" > "$WORKDIR/server.log" 2>&1 &
   SERVER_PID=$!
+  sleep 1
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "--- server exited immediately ---" >&2
+    cat "$WORKDIR/server.log" >&2 || true
+    fail "server failed to start"
+  fi
 fi
 
 # Every request goes through here so a failure prints what the server said.
@@ -88,12 +94,29 @@ push() { # push <token> <json-array> -> response body
 }
 
 echo "== startup =="
+# A plain retry loop rather than `api`: the server needs a moment to bind, and
+# `api` aborts the whole script on the first failure, which turns an ordinary
+# startup delay into an immediate, unexplained exit.
+ready=""
 for _ in $(seq 1 40); do
-  if api GET /api/health > "$WORKDIR/health.json" 2>/dev/null; then break; fi
+  if curl -s -m 2 -o "$WORKDIR/health.json" "$BASE/api/health" 2>/dev/null; then
+    ready=1
+    break
+  fi
   sleep 0.5
 done
-grep -q '"ok":true' "$WORKDIR/health.json" || fail "health check never came up"
-pass "health responds"
+if [ -z "$ready" ]; then
+  echo "--- server never answered; log follows ---" >&2
+  tail -20 "$WORKDIR/server.log" 2>&1 || true
+  fail "health check never came up"
+fi
+grep -q '"ok":true' "$WORKDIR/health.json" || fail "health responded but not ok"
+# The assertions below assume nothing is stored yet: a record that already
+# exists is legitimately reported as superseded rather than accepted, which
+# would look like a failure. Say so plainly instead of failing obscurely.
+initial_rev=$(json 'd["rev"]' < "$WORKDIR/health.json")
+[ "$initial_rev" = "0" ] || fail "server already holds data (rev=$initial_rev); this test needs a fresh instance"
+pass "health responds on an empty server"
 
 echo "== auth =="
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/login" \
