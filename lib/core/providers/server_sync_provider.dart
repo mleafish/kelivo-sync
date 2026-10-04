@@ -256,9 +256,10 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     // The database moved because of what the server sent, not because of
     // anything the user did. Re-baseline so this does not look like a local
-    // edit and bounce straight back out again.
-    _publishedSignature = await _signature();
+    // edit -- and persist first, because recording the sync state writes to the
+    // very database whose signature is the change signal.
     await _persistState();
+    _publishedSignature = await _signature();
   }
 
   /// Publishes local changes the server has not seen.
@@ -288,8 +289,11 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
     // request and moves nothing.
     await _blobSync.push(base: base, token: _token);
 
-    _publishedSignature = await _signature();
+    // Persist the cursors first, then take the signature: writing them changes
+    // the same database, and a signature taken before that write is stale the
+    // moment it is recorded, which makes the poll fire on every tick forever.
     await _persistState();
+    _publishedSignature = await _signature();
   }
 
   // ===== Local change detection =====

@@ -19,6 +19,7 @@ class SyncTableSpec {
     this.excludeColumns = const <String>[],
     this.parentNamespace,
     this.parentColumn,
+    this.rowFilter,
   });
 
   /// Record name used on the wire and in the server's store.
@@ -53,6 +54,34 @@ class SyncTableSpec {
   /// database.
   final String? parentNamespace;
   final String? parentColumn;
+
+  /// Rows this table must not carry, decided from the row itself.
+  ///
+  /// Applies to both directions: such a row is neither published nor accepted
+  /// from another device.
+  final bool Function(Map<String, dynamic> payload)? rowFilter;
+}
+
+/// Preference keys that describe the running install rather than the user's
+/// data.
+///
+/// These must never travel. Beyond sitting next to credentials the user did not
+/// mean to publish, several of them are rewritten on every sync -- carrying
+/// them makes the engine push its own bookkeeping back and forth, and the
+/// server's revision counter climbs forever while real changes drown in it.
+const List<String> localOnlyPreferencePrefixes = <String>[
+  'server_sync_',
+  's3_sync_',
+  'local_snapshot_',
+];
+
+bool _preferenceIsSyncable(Map<String, dynamic> payload) {
+  final key = payload['key'];
+  if (key is! String || key.isEmpty) return false;
+  for (final prefix in localOnlyPreferencePrefixes) {
+    if (key.startsWith(prefix)) return false;
+  }
+  return true;
 }
 
 const List<SyncTableSpec> syncTableSpecs = <SyncTableSpec>[
@@ -197,6 +226,7 @@ const List<SyncTableSpec> syncTableSpecs = <SyncTableSpec>[
     table: 'preference_rows',
     keyColumns: ['key'],
     cursorExpression: 'updated_at',
+    rowFilter: _preferenceIsSyncable,
   ),
   SyncTableSpec(
     namespace: 'extension_entity',

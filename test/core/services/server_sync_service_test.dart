@@ -186,4 +186,60 @@ void main() {
     );
     expect(remaining, isEmpty);
   });
+
+  test('per-install preferences are never published', () async {
+    // These sit next to credentials and several are rewritten on every sync.
+    // Publishing them made the engine push its own bookkeeping back and forth:
+    // the server's revision counter climbed every second while the user's real
+    // changes were lost in the noise.
+    final now = DateTime.now().microsecondsSinceEpoch;
+    for (final key in const [
+      'server_sync_state_v1',
+      'server_sync_config_v1',
+      's3_sync_state_v1',
+      'local_snapshot_last_success_at_v1',
+      'webdav_config_v1',
+      'user_name',
+    ]) {
+      await repository.syncExecute(
+        'INSERT INTO preference_rows (key, value, updated_at) VALUES (?, ?, ?)',
+        [key, '"x"', now],
+      );
+    }
+
+    final collected = await service.collectChanges();
+    final published = collected.records
+        .where((r) => r.namespace == 'preference')
+        .map((r) => r.payload['key'])
+        .toSet();
+
+    expect(published, contains('user_name'));
+    expect(published, contains('webdav_config_v1'));
+    expect(published, isNot(contains('server_sync_state_v1')));
+    expect(published, isNot(contains('server_sync_config_v1')));
+    expect(published, isNot(contains('s3_sync_state_v1')));
+    expect(published, isNot(contains('local_snapshot_last_success_at_v1')));
+  });
+
+  test('a per-install preference from another device is ignored', () async {
+    await service.applyRemote([
+      ServerSyncRecord(
+        namespace: 'preference',
+        id: '["server_sync_state_v1"]',
+        payload: {
+          'key': 'server_sync_state_v1',
+          'value': '{"rev":99999}',
+          'updated_at': DateTime.now().microsecondsSinceEpoch,
+        },
+        updatedAt: DateTime.now().microsecondsSinceEpoch,
+        deviceId: 'device-b',
+      ),
+    ]);
+
+    final rows = await repository.syncSelect(
+      'SELECT key FROM preference_rows WHERE key = ?',
+      ['server_sync_state_v1'],
+    );
+    expect(rows, isEmpty);
+  });
 }

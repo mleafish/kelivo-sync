@@ -77,10 +77,13 @@ class ServerSyncService {
       for (final row in rows) {
         // The cursor advances on the same value the record is ordered by, so a
         // message whose updated_at is null still moves it forward rather than
-        // being re-sent on every single pass.
+        // being re-sent on every single pass. It advances whether or not the
+        // row is publishable, otherwise a filtered row would be re-read forever.
         final record = _recordFromRow(spec, row);
-        records.add(record);
         if (record.updatedAt > highest) highest = record.updatedAt;
+        final filter = spec.rowFilter;
+        if (filter != null && !filter(record.payload)) continue;
+        records.add(record);
         final key = row[spec.keyColumns.first];
         if (key != null) parentKeys.add('$key');
       }
@@ -220,6 +223,10 @@ class ServerSyncService {
         final batch = byNamespace[spec.namespace];
         if (batch == null) continue;
         for (final record in batch) {
+          // A row another device should not have sent -- a per-install
+          // preference, say -- is ignored rather than written.
+          final filter = spec.rowFilter;
+          if (filter != null && !filter(record.payload)) continue;
           try {
             await _upsert(spec, record);
             applied += 1;
