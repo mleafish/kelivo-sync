@@ -22,6 +22,12 @@ final class BackupPortability {
     // objects. `s3_sync_state_v1` is that same install's cursors.
     's3_sync_config_v1',
     's3_sync_state_v1',
+    // The server-sync equivalent: a login token, a revision cursor and this
+    // install's identity. None of it means anything on another device, and a
+    // shared token would give every device the same identity.
+    'server_sync_config_v1',
+    'server_sync_state_v1',
+    'server_sync_device_id_v1',
   };
 
   static bool _isLinked(BusinessEntityValue row) =>

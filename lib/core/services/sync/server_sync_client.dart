@@ -298,6 +298,10 @@ class ServerSyncClient {
     Timer? retry;
     var attempt = 0;
 
+    // Declared before `connect` and assigned after it: the two call each other,
+    // and a local function cannot be referenced above its own declaration.
+    late void Function() scheduleReconnect;
+
     Future<void> connect() async {
       if (closed) return;
       try {
@@ -317,16 +321,16 @@ class ServerSyncClient {
               // Ignore anything that is not a revision notice.
             }
           },
-          onDone: () => _scheduleReconnect(),
-          onError: (Object _) => _scheduleReconnect(),
+          onDone: () => scheduleReconnect(),
+          onError: (Object _) => scheduleReconnect(),
           cancelOnError: true,
         );
       } catch (_) {
-        _scheduleReconnect();
+        scheduleReconnect();
       }
     }
 
-    void _scheduleReconnect() {
+    scheduleReconnect = () {
       if (closed) return;
       socket = null;
       attempt += 1;
@@ -335,7 +339,7 @@ class ServerSyncClient {
       final seconds = (1 << (attempt - 1)).clamp(1, 60);
       retry?.cancel();
       retry = Timer(Duration(seconds: seconds), connect);
-    }
+    };
 
     controller = StreamController<int>(
       onListen: connect,

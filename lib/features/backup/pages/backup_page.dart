@@ -19,7 +19,8 @@ import '../../../core/providers/backup_provider.dart';
 import '../../../core/providers/local_snapshot_provider.dart';
 import '../../../core/providers/backup_reminder_provider.dart';
 import '../../../core/providers/s3_backup_provider.dart';
-import '../../../core/providers/s3_sync_provider.dart';
+import '../../../core/providers/server_sync_provider.dart';
+import '../../../core/services/sync/server_sync_client.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/services/chat/chat_service.dart';
 import '../../../core/services/backup/backup_cancel_token.dart';
@@ -272,7 +273,7 @@ class _BackupPageState extends State<BackupPage> {
           final s3Vm = context.watch<S3BackupProvider>();
           // Auto sync is optional: this page is also built on its own, without
           // a sync engine above it.
-          final syncVm = context.watch<S3SyncProvider?>();
+          final syncVm = context.watch<ServerSyncProvider?>();
           final cfg = vm.config;
           final s3Cfg = s3Vm.config;
 
@@ -827,7 +828,7 @@ class _BackupPageState extends State<BackupPage> {
                                   ? l10n.backupPageS3SyncNow
                                   : _syncStatusDetail(syncVm, l10n))
                             : null,
-                        onTap: () => _showS3SyncSettingsPage(context, syncVm),
+                        onTap: () => _showServerSyncSettingsPage(context, syncVm),
                       ),
                     ],
                     _iosDivider(context),
@@ -1562,18 +1563,18 @@ class _BackupPageState extends State<BackupPage> {
     );
   }
 
-  Future<void> _showS3SyncSettingsPage(
+  Future<void> _showServerSyncSettingsPage(
     BuildContext context,
-    S3SyncProvider vm,
+    ServerSyncProvider vm,
   ) async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => _S3SyncSettingsPage(vm: vm)),
+      MaterialPageRoute(builder: (_) => _ServerSyncSettingsPage(vm: vm)),
     );
   }
 }
 
 /// One-line summary of the last sync, for the row that opens the settings.
-String _syncStatusDetail(S3SyncProvider vm, AppLocalizations l10n) {
+String _syncStatusDetail(ServerSyncProvider vm, AppLocalizations l10n) {
   final at = vm.lastSyncAt;
   if (at == null) return l10n.backupPageS3SyncNever;
   final local = at.toLocal();
@@ -2669,46 +2670,32 @@ class _WebDavSettingsPageState extends State<_WebDavSettingsPage> {
   }
 }
 
-class _S3SyncSettingsPage extends StatefulWidget {
-  const _S3SyncSettingsPage({required this.vm});
+class _ServerSyncSettingsPage extends StatefulWidget {
+  const _ServerSyncSettingsPage({required this.vm});
 
-  final S3SyncProvider vm;
+  final ServerSyncProvider vm;
 
   @override
-  State<_S3SyncSettingsPage> createState() => _S3SyncSettingsPageState();
+  State<_ServerSyncSettingsPage> createState() => _ServerSyncSettingsPageState();
 }
 
-class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
-  late final TextEditingController _deviceNameCtrl;
-  late final TextEditingController _intervalCtrl;
-  late bool _enabled;
-  late bool _syncFiles;
-
-  static String _defaultDeviceName() {
-    if (Platform.isIOS) return 'iPhone';
-    if (Platform.isAndroid) return 'Android';
-    if (Platform.isWindows) return 'Windows PC';
-    if (Platform.isMacOS) return 'Mac';
-    if (Platform.isLinux) return 'Linux';
-    return 'Kelivo';
-  }
+class _ServerSyncSettingsPageState extends State<_ServerSyncSettingsPage> {
+  late final TextEditingController _urlCtrl;
+  late final TextEditingController _passwordCtrl;
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    final cfg = widget.vm.config;
-    _enabled = cfg.enabled;
-    _syncFiles = cfg.syncFiles;
-    _deviceNameCtrl = TextEditingController(
-      text: cfg.deviceName.isEmpty ? _defaultDeviceName() : cfg.deviceName,
-    );
-    _intervalCtrl = TextEditingController(text: cfg.intervalSeconds.toString());
+    _urlCtrl = TextEditingController(text: widget.vm.serverUrl);
+    // Never prefilled: the password is not stored anywhere on the device.
+    _passwordCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
-    _deviceNameCtrl.dispose();
-    _intervalCtrl.dispose();
+    _urlCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
   }
 
@@ -2716,9 +2703,7 @@ class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
-    // Prefer the live engine so status changes rebuild the page, but fall back
-    // to the instance this page was opened with.
-    final vm = context.watch<S3SyncProvider?>() ?? widget.vm;
+    final vm = context.watch<ServerSyncProvider?>() ?? widget.vm;
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -2733,18 +2718,6 @@ class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
           ),
         ),
         title: Text(l10n.backupPageS3AutoSync),
-        actions: [
-          Tooltip(
-            message: l10n.backupPageSave,
-            child: _TactileIconButton(
-              icon: Lucide.Check,
-              color: cs.onSurface,
-              size: 22,
-              onTap: _save,
-            ),
-          ),
-          const SizedBox(width: 12),
-        ],
       ),
       body: SafeArea(
         child: Column(
@@ -2759,41 +2732,40 @@ class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
                         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
                         child: Column(
                           children: [
-                            _switchBlock(
-                              context,
-                              label: l10n.backupPageS3SyncEnable,
-                              value: _enabled,
-                              onChanged: (v) => setState(() => _enabled = v),
+                            _InputRow(
+                              label: l10n.syncServerUrl,
+                              controller: _urlCtrl,
+                              hint: 'https://sync.example.com',
                             ),
                             const SizedBox(height: 12),
                             _InputRow(
-                              label: l10n.backupPageS3SyncDeviceName,
-                              controller: _deviceNameCtrl,
-                              hint: l10n.backupPageS3SyncDeviceName,
+                              label: l10n.syncServerPassword,
+                              controller: _passwordCtrl,
+                              obscure: true,
                             ),
-                            const SizedBox(height: 12),
-                            _InputRow(
-                              label:
-                                  '${l10n.backupPageS3SyncInterval} (${l10n.backupPageS3SyncSeconds})',
-                              controller: _intervalCtrl,
-                              hint: '20',
-                              keyboardType: TextInputType.number,
-                            ),
-                            const SizedBox(height: 12),
-                            _switchBlock(
-                              context,
-                              label: l10n.backupPageS3SyncFiles,
-                              value: _syncFiles,
-                              onChanged: (v) => setState(() => _syncFiles = v),
-                            ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 16),
                             SizedBox(
                               width: double.infinity,
-                              child: _IosOutlineButton(
-                                label: l10n.backupPageS3SyncNow,
-                                onTap: () => unawaited(_syncNow(context)),
-                              ),
+                              child: vm.loggedIn
+                                  ? _IosOutlineButton(
+                                      label: l10n.syncServerDisconnect,
+                                      onTap: _busy ? _noop : _disconnect,
+                                    )
+                                  : _IosFilledButton(
+                                      label: l10n.syncServerConnect,
+                                      onTap: _busy ? _noop : _connect,
+                                    ),
                             ),
+                            if (vm.loggedIn) ...[
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: _IosOutlineButton(
+                                  label: l10n.backupPageS3SyncNow,
+                                  onTap: _busy ? _noop : _syncNow,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -2804,71 +2776,36 @@ class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: _IosFilledButton(
-                  label: l10n.backupPageSave,
-                  onTap: _save,
-                ),
-              ),
-            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _switchBlock(
-    BuildContext context, {
-    required String label,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      decoration: BoxDecoration(
-        color: context.appColors.surfaceFill,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.18)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                color: cs.onSurface.withValues(alpha: 0.85),
-              ),
-            ),
-          ),
-          IosSwitch(value: value, onChanged: onChanged),
-        ],
-      ),
-    );
-  }
+  void _noop() {}
 
   Widget _statusCard(
     BuildContext context,
-    S3SyncProvider vm,
+    ServerSyncProvider vm,
     AppLocalizations l10n,
   ) {
     final cs = Theme.of(context).colorScheme;
-    final at = vm.lastSyncAt;
     final color = vm.lastError != null
         ? cs.error
         : cs.onSurface.withValues(alpha: 0.7);
     final lines = <String>[
-      if (!vm.configured) l10n.backupPageS3SyncHint,
-      if (at != null)
-        '${l10n.backupPageS3SyncLastAt} ${_formatTime(at)}'
+      if (vm.lastError != null)
+        '${l10n.backupPageS3SyncFailed}: ${vm.lastError}'
+      else if (!vm.loggedIn)
+        l10n.syncServerNotConnected
+      else if (vm.syncing)
+        l10n.syncServerNow
+      else
+        l10n.syncServerConnected,
+      if (vm.lastSyncAt != null)
+        '${l10n.backupPageS3SyncLastAt} ${_formatTime(vm.lastSyncAt!)}'
       else
         l10n.backupPageS3SyncNever,
-      if (vm.lastError != null)
-        '${l10n.backupPageS3SyncFailed}: ${vm.lastError}',
     ];
     return SectionCard(
       children: [
@@ -2899,41 +2836,54 @@ class _S3SyncSettingsPageState extends State<_S3SyncSettingsPage> {
         '${two(local.hour)}:${two(local.minute)}';
   }
 
-  Future<void> _syncNow(BuildContext context) async {
+  Future<void> _run(Future<void> Function() action) async {
+    setState(() => _busy = true);
     final l10n = AppLocalizations.of(context)!;
-    final vm = widget.vm;
-    final outcome = await vm.syncNow();
-    if (!context.mounted) return;
-    if (outcome == null) {
+    try {
+      await action();
+      if (!mounted) return;
       showAppSnackBar(
         context,
-        message: vm.lastError ?? l10n.backupPageS3SyncFailed,
+        message: l10n.backupPageS3SyncDone,
+        type: NotificationType.success,
+      );
+    } on SyncServerException catch (error) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        message: error.message,
         type: NotificationType.error,
       );
-      return;
+    } catch (error) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        message: error.toString(),
+        type: NotificationType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-    showAppSnackBar(
-      context,
-      message: l10n.backupPageS3SyncDone,
-      type: NotificationType.success,
-    );
   }
 
-  Future<void> _save() async {
-    final interval =
-        int.tryParse(_intervalCtrl.text.trim()) ??
-        widget.vm.config.intervalSeconds;
-    final next = widget.vm.config.copyWith(
-      enabled: _enabled,
-      deviceName: _deviceNameCtrl.text.trim(),
-      syncFiles: _syncFiles,
-      intervalSeconds: interval.clamp(10, 3600),
+  Future<void> _connect() => _run(() async {
+    await widget.vm.connect(
+      url: _urlCtrl.text.trim(),
+      password: _passwordCtrl.text,
     );
-    await widget.vm.updateConfig(next);
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
-  }
+    _passwordCtrl.clear();
+  });
+
+  Future<void> _disconnect() => _run(() async {
+    await widget.vm.disconnect();
+    if (mounted) setState(() {});
+  });
+
+  Future<void> _syncNow() => _run(() async {
+    await widget.vm.syncNow();
+    final error = widget.vm.lastError;
+    if (error != null) throw SyncServerException(error);
+  });
 }
 
 class _S3SettingsPage extends StatefulWidget {
@@ -3156,7 +3106,7 @@ class _S3SettingsPageState extends State<_S3SettingsPage> {
   Future<void> _save() async {
     // Read the sync engine before the first await: it is the only context use
     // in this method that would otherwise sit past an async gap.
-    final syncProvider = Provider.of<S3SyncProvider?>(context, listen: false);
+    final syncProvider = Provider.of<ServerSyncProvider?>(context, listen: false);
     final newCfg = widget.cfg.copyWith(
       endpoint: _endpointCtrl.text.trim(),
       region: _regionCtrl.text.trim().isEmpty

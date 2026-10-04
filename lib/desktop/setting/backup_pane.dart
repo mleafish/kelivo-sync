@@ -15,7 +15,8 @@ import '../../core/providers/backup_provider.dart';
 import '../../core/providers/backup_reminder_provider.dart';
 import '../../core/providers/local_snapshot_provider.dart';
 import '../../core/providers/s3_backup_provider.dart';
-import '../../core/providers/s3_sync_provider.dart';
+import '../../core/providers/server_sync_provider.dart';
+import '../../core/services/sync/server_sync_client.dart';
 import '../../core/providers/settings_provider.dart';
 import '../../core/services/chat/chat_service.dart';
 import '../../core/services/backup/cherry_importer.dart';
@@ -56,13 +57,11 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
   late TextEditingController _s3Prefix;
   late TextEditingController _webDavUserAgent;
   late TextEditingController _s3UserAgent;
-  late TextEditingController _syncDeviceName;
-  late TextEditingController _syncInterval;
+  late TextEditingController _syncServerUrl;
+  late TextEditingController _syncPassword;
   bool _includeChats = true;
   bool _includeFiles = true;
   bool _s3PathStyle = true;
-  bool _syncEnabled = false;
-  bool _syncFiles = false;
   bool _remoteBackupDialogActive = false;
 
   @override
@@ -89,13 +88,10 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     _s3UserAgent = TextEditingController(text: s3.userAgent);
     _s3PathStyle = s3.pathStyle;
 
-    final sync = settings.s3SyncConfig;
-    _syncEnabled = sync.enabled;
-    _syncFiles = sync.syncFiles;
-    _syncDeviceName = TextEditingController(text: sync.deviceName);
-    _syncInterval = TextEditingController(
-      text: sync.intervalSeconds.toString(),
-    );
+    // The password is never stored, so this field always starts empty; the
+    // address is remembered because it is not a secret.
+    _syncServerUrl = TextEditingController();
+    _syncPassword = TextEditingController();
   }
 
   @override
@@ -113,31 +109,57 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     _s3Prefix.dispose();
     _webDavUserAgent.dispose();
     _s3UserAgent.dispose();
-    _syncDeviceName.dispose();
-    _syncInterval.dispose();
+    _syncServerUrl.dispose();
+    _syncPassword.dispose();
     super.dispose();
   }
 
-  /// Applies a change to the real-time sync settings.
-  ///
-  /// The provider persists the config itself, which is also where a device id
-  /// is first assigned.
-  Future<void> _applySyncConfig({
-    bool? enabled,
-    String? deviceName,
-    int? intervalSeconds,
-    bool? syncFiles,
-  }) async {
-    final provider = Provider.of<S3SyncProvider?>(context, listen: false);
+  /// Signs in to the sync server with what is currently in the two fields.
+  Future<void> _connectSync() async {
+    final provider = Provider.of<ServerSyncProvider?>(context, listen: false);
     if (provider == null) return;
-    final current = provider.config;
-    await provider.updateConfig(
-      current.copyWith(
-        enabled: enabled,
-        deviceName: deviceName,
-        intervalSeconds: intervalSeconds?.clamp(10, 3600),
-        syncFiles: syncFiles,
-      ),
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      await provider.connect(
+        url: _syncServerUrl.text.trim(),
+        password: _syncPassword.text,
+      );
+      if (!mounted) return;
+      _syncPassword.clear();
+      showAppSnackBar(
+        context,
+        message: l10n.backupPageS3SyncDone,
+        type: NotificationType.success,
+      );
+    } on SyncServerException catch (error) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        message: error.message,
+        type: NotificationType.error,
+      );
+    }
+  }
+
+  Future<void> _disconnectSync() async {
+    final provider = Provider.of<ServerSyncProvider?>(context, listen: false);
+    await provider?.disconnect();
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _syncNow() async {
+    final provider = Provider.of<ServerSyncProvider?>(context, listen: false);
+    if (provider == null) return;
+    final l10n = AppLocalizations.of(context)!;
+    await provider.syncNow();
+    if (!mounted) return;
+    showAppSnackBar(
+      context,
+      message: provider.lastError ?? l10n.backupPageS3SyncDone,
+      type: provider.lastError == null
+          ? NotificationType.success
+          : NotificationType.error,
     );
   }
 
@@ -211,7 +233,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     final cfg = _buildS3ConfigFromForm();
     final settings = context.read<SettingsProvider>();
     final s3BackupProvider = context.read<S3BackupProvider>();
-    final syncProvider = Provider.of<S3SyncProvider?>(context, listen: false);
+    final syncProvider = Provider.of<ServerSyncProvider?>(context, listen: false);
     await settings.setS3Config(cfg);
     s3BackupProvider.updateConfig(cfg);
     syncProvider?.updateS3Config(cfg);
@@ -232,7 +254,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
   }) async {
     final settings = context.read<SettingsProvider>();
     final s3BackupProvider = context.read<S3BackupProvider>();
-    final syncProvider = Provider.of<S3SyncProvider?>(context, listen: false);
+    final syncProvider = Provider.of<ServerSyncProvider?>(context, listen: false);
     final cfg = S3Config(
       endpoint: endpoint ?? _s3Endpoint.text.trim(),
       region:
@@ -302,7 +324,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     final webdavVm = context.watch<BackupProvider>();
     final s3Vm = context.watch<S3BackupProvider>();
     // Auto sync is optional: the pane is also built on its own, without it.
-    final syncVm = context.watch<S3SyncProvider?>();
+    final syncVm = context.watch<ServerSyncProvider?>();
     final busy = webdavVm.busy || s3Vm.busy;
     final showHeaderBusy = busy && !_remoteBackupDialogActive;
 
@@ -940,8 +962,9 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
               if (syncVm != null) ...[
                 const SliverToBoxAdapter(child: SizedBox(height: 10)),
 
-                // Real-time two-way sync between this device and the others
-                // sharing the bucket configured above.
+                // Real-time sync against the server configured here. The
+                // address survives a restart because it is not a secret; the
+                // password never is.
                 SliverToBoxAdapter(
                   child: SectionCard(
                     padding: const EdgeInsets.all(12),
@@ -966,97 +989,64 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                         ),
                       ),
                       _ItemRow(
-                        label: l10n.backupPageS3SyncEnable,
-                        trailing: IosSwitch(
-                          value: _syncEnabled,
-                          onChanged: busy
-                              ? null
-                              : (v) async {
-                                  setState(() => _syncEnabled = v);
-                                  await _applySyncConfig(enabled: v);
-                                },
-                        ),
-                      ),
-                      _rowDivider(context),
-                      _ItemRow(
-                        label: l10n.backupPageS3SyncDeviceName,
+                        label: l10n.syncServerUrl,
                         trailing: SizedBox(
                           width: 420,
                           child: TextField(
-                            controller: _syncDeviceName,
-                            enabled: !busy,
+                            controller: _syncServerUrl,
+                            enabled: !syncVm.loggedIn,
                             style: const TextStyle(fontSize: 14),
                             decoration: _deskInputDecoration(context).copyWith(
-                              hintText: l10n.backupPageS3SyncDeviceName,
+                              hintText: 'https://sync.example.com',
                             ),
-                            onChanged: (v) =>
-                                _applySyncConfig(deviceName: v.trim()),
                           ),
                         ),
                       ),
                       _rowDivider(context),
                       _ItemRow(
-                        label:
-                            '${l10n.backupPageS3SyncInterval} (${l10n.backupPageS3SyncSeconds})',
+                        label: l10n.syncServerPassword,
                         trailing: SizedBox(
                           width: 420,
                           child: TextField(
-                            controller: _syncInterval,
-                            enabled: !busy,
-                            keyboardType: TextInputType.number,
+                            controller: _syncPassword,
+                            enabled: !syncVm.loggedIn,
+                            obscureText: true,
                             style: const TextStyle(fontSize: 14),
                             decoration: _deskInputDecoration(
                               context,
-                            ).copyWith(hintText: '20'),
-                            onChanged: (v) => _applySyncConfig(
-                              intervalSeconds: int.tryParse(v.trim()),
-                            ),
+                            ).copyWith(hintText: '********'),
+                            onSubmitted: (_) => _connectSync(),
                           ),
                         ),
                       ),
                       _rowDivider(context),
                       _ItemRow(
-                        label: l10n.backupPageS3SyncFiles,
-                        trailing: IosSwitch(
-                          value: _syncFiles,
-                          onChanged: busy
-                              ? null
-                              : (v) async {
-                                  setState(() => _syncFiles = v);
-                                  await _applySyncConfig(syncFiles: v);
-                                },
-                        ),
-                      ),
-                      _rowDivider(context),
-                      _ItemRow(
-                        label: l10n.backupPageS3AutoSync,
+                        label: l10n.syncServerConnect,
                         trailing: Wrap(
                           spacing: 8,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            _DeskIosButton(
-                              label: l10n.backupPageS3SyncNow,
-                              filled: false,
-                              dense: true,
-                              onTap: busy
-                                  ? () {}
-                                  : () async {
-                                      await _saveS3Config();
-                                      if (!context.mounted) return;
-                                      final outcome = await syncVm.syncNow();
-                                      if (!context.mounted) return;
-                                      showAppSnackBar(
-                                        context,
-                                        message: outcome == null
-                                            ? (syncVm.lastError ??
-                                                  l10n.backupPageS3SyncFailed)
-                                            : l10n.backupPageS3SyncDone,
-                                        type: outcome == null
-                                            ? NotificationType.error
-                                            : NotificationType.success,
-                                      );
-                                    },
-                            ),
+                            if (!syncVm.loggedIn)
+                              _DeskIosButton(
+                                label: l10n.syncServerConnect,
+                                filled: true,
+                                dense: true,
+                                onTap: busy ? () {} : _connectSync,
+                              )
+                            else ...[
+                              _DeskIosButton(
+                                label: l10n.backupPageS3SyncNow,
+                                filled: false,
+                                dense: true,
+                                onTap: busy ? () {} : _syncNow,
+                              ),
+                              _DeskIosButton(
+                                label: l10n.syncServerDisconnect,
+                                filled: false,
+                                dense: true,
+                                onTap: busy ? () {} : _disconnectSync,
+                              ),
+                            ],
                             _SyncStatusLabel(provider: syncVm),
                           ],
                         ),
@@ -2250,7 +2240,7 @@ InputDecoration _deskInputDecoration(BuildContext context) {
 class _SyncStatusLabel extends StatelessWidget {
   const _SyncStatusLabel({required this.provider});
 
-  final S3SyncProvider provider;
+  final ServerSyncProvider provider;
 
   @override
   Widget build(BuildContext context) {

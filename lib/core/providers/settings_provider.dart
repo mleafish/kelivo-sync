@@ -387,7 +387,6 @@ class SettingsProvider extends ChangeNotifier {
       'search_auto_test_on_launch_v1';
   static const String _webDavConfigKey = 'webdav_config_v1';
   static const String _s3ConfigKey = 's3_config_v1';
-  static const String _s3SyncConfigKey = 's3_sync_config_v1';
   // Global network proxy
   static const String _globalProxyEnabledKey = 'global_proxy_enabled_v1';
   static const String _globalProxyTypeKey =
@@ -1448,15 +1447,6 @@ class SettingsProvider extends ChangeNotifier {
         );
       } catch (_) {}
     }
-    // s3 real-time sync config
-    final s3SyncStr = prefs.getString(_s3SyncConfigKey);
-    if (s3SyncStr != null && s3SyncStr.isNotEmpty) {
-      try {
-        _s3SyncConfig = S3SyncConfig.fromJson(
-          jsonDecode(s3SyncStr) as Map<String, dynamic>,
-        );
-      } catch (_) {}
-    }
     if (_providerConfigs.isEmpty) {
       // Seed a couple of sensible defaults on first launch, but do not recreate
       // providers implicitly during later reads (e.g., when switching chats).
@@ -2174,15 +2164,6 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = _preferences;
     await prefs.setString(_s3ConfigKey, jsonEncode(cfg.toJson()));
-  }
-
-  S3SyncConfig _s3SyncConfig = const S3SyncConfig();
-  S3SyncConfig get s3SyncConfig => _s3SyncConfig;
-  Future<void> setS3SyncConfig(S3SyncConfig cfg) async {
-    _s3SyncConfig = cfg;
-    notifyListeners();
-    final prefs = _preferences;
-    await prefs.setString(_s3SyncConfigKey, jsonEncode(cfg.toJson()));
   }
 
   Future<void> _initSearchConnectivityTests() async {
