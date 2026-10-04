@@ -233,10 +233,8 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     final cfg = _buildS3ConfigFromForm();
     final settings = context.read<SettingsProvider>();
     final s3BackupProvider = context.read<S3BackupProvider>();
-    final syncProvider = Provider.of<ServerSyncProvider?>(context, listen: false);
     await settings.setS3Config(cfg);
     s3BackupProvider.updateConfig(cfg);
-    syncProvider?.updateS3Config(cfg);
   }
 
   Future<void> _applyS3Partial({
@@ -254,7 +252,6 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
   }) async {
     final settings = context.read<SettingsProvider>();
     final s3BackupProvider = context.read<S3BackupProvider>();
-    final syncProvider = Provider.of<ServerSyncProvider?>(context, listen: false);
     final cfg = S3Config(
       endpoint: endpoint ?? _s3Endpoint.text.trim(),
       region:
@@ -276,7 +273,6 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     );
     await settings.setS3Config(cfg);
     s3BackupProvider.updateConfig(cfg);
-    syncProvider?.updateS3Config(cfg);
   }
 
   Future<bool> _runRemoteBackupTask({

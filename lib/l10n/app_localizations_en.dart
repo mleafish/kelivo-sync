@@ -2087,6 +2087,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get backupPageS3AutoSync => 'Auto Sync';
 
   @override
+  String get syncServerUrl => 'Server address';
+
+  @override
+  String get syncServerPassword => 'Login password';
+
+  @override
+  String get syncServerConnect => 'Connect';
+
+  @override
+  String get syncServerDisconnect => 'Disconnect';
+
+  @override
+  String get syncServerConnected => 'Connected';
+
+  @override
+  String get syncServerNotConnected => 'Not connected';
+
+  @override
+  String get syncServerNow => 'Syncing now';
+
+  @override
   String get backupPageS3SyncEnable => 'Enable auto sync';
 
   @override

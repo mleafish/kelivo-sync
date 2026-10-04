@@ -1864,14 +1864,12 @@ class _InputRow extends StatelessWidget {
     this.hint,
     this.obscure = false,
     this.suffix,
-    this.keyboardType,
   });
   final String label;
   final TextEditingController controller;
   final String? hint;
   final bool obscure;
   final Widget? suffix;
-  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
@@ -1892,7 +1890,6 @@ class _InputRow extends StatelessWidget {
         TextField(
           controller: controller,
           obscureText: obscure,
-          keyboardType: keyboardType,
           textAlignVertical: TextAlignVertical.center,
           style: TextStyle(
             fontSize: 15,
@@ -3104,9 +3101,6 @@ class _S3SettingsPageState extends State<_S3SettingsPage> {
   }
 
   Future<void> _save() async {
-    // Read the sync engine before the first await: it is the only context use
-    // in this method that would otherwise sit past an async gap.
-    final syncProvider = Provider.of<ServerSyncProvider?>(context, listen: false);
     final newCfg = widget.cfg.copyWith(
       endpoint: _endpointCtrl.text.trim(),
       region: _regionCtrl.text.trim().isEmpty
@@ -3124,8 +3118,6 @@ class _S3SettingsPageState extends State<_S3SettingsPage> {
     );
     await widget.settings.setS3Config(newCfg);
     widget.vm.updateConfig(newCfg);
-    // Keep the background sync engine on the same connection.
-    syncProvider?.updateS3Config(newCfg);
     if (mounted) {
       Navigator.of(context).pop();
     }

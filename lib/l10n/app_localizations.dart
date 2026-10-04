@@ -3910,6 +3910,48 @@ abstract class AppLocalizations {
   /// **'Auto Sync'**
   String get backupPageS3AutoSync;
 
+  /// No description provided for @syncServerUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Server address'**
+  String get syncServerUrl;
+
+  /// No description provided for @syncServerPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Login password'**
+  String get syncServerPassword;
+
+  /// No description provided for @syncServerConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get syncServerConnect;
+
+  /// No description provided for @syncServerDisconnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect'**
+  String get syncServerDisconnect;
+
+  /// No description provided for @syncServerConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get syncServerConnected;
+
+  /// No description provided for @syncServerNotConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Not connected'**
+  String get syncServerNotConnected;
+
+  /// No description provided for @syncServerNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing now'**
+  String get syncServerNow;
+
   /// No description provided for @backupPageS3SyncEnable.
   ///
   /// In en, this message translates to:

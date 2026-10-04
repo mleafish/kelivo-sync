@@ -5,13 +5,13 @@ import 'dart:math';
 
 import 'package:flutter/widgets.dart';
 
-import '../../database/app_database.dart';
-import '../../database/business_preferences.dart';
-import '../../database/chat_database_repository.dart';
 import '../../utils/app_directories.dart';
-import '../backup/backup_activity.dart';
-import 'server_sync_client.dart';
-import 'server_sync_service.dart';
+import '../database/app_database.dart';
+import '../database/business_preferences.dart';
+import '../database/chat_database_repository.dart';
+import '../services/backup/backup_activity.dart';
+import '../services/sync/server_sync_client.dart';
+import '../services/sync/server_sync_service.dart';
 
 /// Drives sync against a self-hosted server and exposes its state to the UI.
 ///

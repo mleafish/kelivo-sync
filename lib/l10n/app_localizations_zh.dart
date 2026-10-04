@@ -2014,6 +2014,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get backupPageS3AutoSync => '自动同步';
 
   @override
+  String get syncServerUrl => '服务器地址';
+
+  @override
+  String get syncServerPassword => '登录密码';
+
+  @override
+  String get syncServerConnect => '连接';
+
+  @override
+  String get syncServerDisconnect => '断开连接';
+
+  @override
+  String get syncServerConnected => '已连接';
+
+  @override
+  String get syncServerNotConnected => '未连接';
+
+  @override
+  String get syncServerNow => '同步中';
+
+  @override
   String get backupPageS3SyncEnable => '启用自动同步';
 
   @override
