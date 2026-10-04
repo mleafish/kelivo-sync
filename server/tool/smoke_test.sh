@@ -208,19 +208,34 @@ pass "identical content deduplicates"
 
 if [ -z "$EXTERNAL_BASE" ]; then
   echo "== persistence across restart =="
+  # Compare the revision before and after rather than asserting a hard-coded
+  # count: the count depends on how many records the checks above happen to
+  # write, and getting it wrong looks like data loss when nothing was lost.
+  before_rev=$(api GET /api/health | json 'd["rev"]')
   kill "$SERVER_PID"; wait "$SERVER_PID" 2>/dev/null || true
   SERVER_PID=""
   "$BIN" --config "$WORKDIR/config.json" >> "$WORKDIR/server.log" 2>&1 &
   SERVER_PID=$!
+  ready=""
   for _ in $(seq 1 40); do
-    if curl -sf "$BASE/api/health" > /dev/null 2>&1; then break; fi
+    if curl -s -m 2 -o "$WORKDIR/health.json" "$BASE/api/health" 2>/dev/null; then
+      ready=1
+      break
+    fi
     sleep 0.5
   done
+  if [ -z "$ready" ]; then
+    echo "--- server did not come back; log follows ---" >&2
+    tail -20 "$WORKDIR/server.log" 2>&1 || true
+    fail "server did not restart"
+  fi
+  after_rev=$(json 'd["rev"]' < "$WORKDIR/health.json")
+  [ "$after_rev" = "$before_rev" ] || fail "revision changed across restart ($before_rev -> $after_rev)"
   TOKEN_C=$(login)
   api GET "/api/changes?since=0" "$TOKEN_C" > "$WORKDIR/after.json"
   after=$(json 'len(d["changes"])' < "$WORKDIR/after.json")
-  [ "$after" -ge 5 ] || fail "records were lost across a restart (saw $after)"
-  pass "records and the signing key survived a restart"
+  [ "$after" = "$before_rev" ] || fail "expected $before_rev records after restart, saw $after"
+  pass "records and the signing key survived a restart ($after records)"
 fi
 
 echo
