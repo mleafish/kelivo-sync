@@ -224,9 +224,10 @@ class SyncApi {
         if (received > config.maxBlobBytes) {
           await sink.close();
           await temp.delete().catchError((Object _) => temp);
-          return _replyJson(request, HttpStatus.requestEntityTooLarge, {
+          await _replyJson(request, HttpStatus.requestEntityTooLarge, {
             'error': 'blob_too_large',
           });
+          return;
         }
         sink.add(chunk);
       }
@@ -238,10 +239,11 @@ class SyncApi {
         final bytes = await temp.readAsBytes();
         store.putBlob(bytes);
       }
-      return _replyJson(request, HttpStatus.ok, {
+      await _replyJson(request, HttpStatus.ok, {
         'hash': hash,
         'size': received,
       });
+      return;
     } finally {
       if (await temp.exists()) {
         await temp.delete().catchError((Object _) => temp);

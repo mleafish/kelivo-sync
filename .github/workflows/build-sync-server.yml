@@ -100,13 +100,15 @@ jobs:
 
           echo "SMOKE TEST PASSED"
 
-      - name: Analyze
-        working-directory: server
-        run: dart analyze
-
+      # Uploaded before the analyzer runs: a lint complaint should not cost the
+      # artifact that the smoke test just proved works.
       - name: Upload server binary
         uses: actions/upload-artifact@v4
         with:
           name: Kelivo-Sync-Server
           path: server/kelivo-sync-server-linux-x64
           if-no-files-found: error
+
+      - name: Analyze
+        working-directory: server
+        run: dart analyze
