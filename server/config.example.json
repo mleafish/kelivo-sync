@@ -1,0 +1,8 @@
+{
+  "password": "在这里填你的登录密码",
+  "dataDir": "./kelivo-sync-data",
+  "host": "0.0.0.0",
+  "port": 8787,
+  "tokenTtlDays": 90,
+  "maxBlobBytes": 536870912
+}

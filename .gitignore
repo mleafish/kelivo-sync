@@ -72,3 +72,12 @@ internationalization.md
 # Local iOS profiling tools and device measurements
 /docs/performance/ios-device-*/
 /tool/ios_performance/
+
+# Sync server build output, local data and secrets
+/server/.dart_tool/
+/server/pubspec.lock
+/server/build/
+/server/kelivo-sync-server*
+/server/config.json
+/server/kelivo-sync-data/
+/server/data/

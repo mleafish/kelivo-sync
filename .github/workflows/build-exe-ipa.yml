@@ -15,6 +15,12 @@ on:
   push:
     branches: [master, main]
     tags: ['v*']
+    # Server and docs changes do not need a client rebuild.
+    paths-ignore:
+      - 'server/**'
+      - 'docs/**'
+      - '**.md'
+      - '.github/workflows/build-sync-server.yml'
 
 permissions:
   contents: write

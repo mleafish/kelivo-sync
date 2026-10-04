@@ -1,0 +1,14 @@
+name: kelivo_sync_server
+description: Authoritative sync server for Kelivo clients.
+publish_to: none
+version: 1.0.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  crypto: ^3.0.0
+  sqlite3: ^2.0.0
+
+dev_dependencies:
+  lints: ^4.0.0
