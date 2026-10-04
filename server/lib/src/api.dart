@@ -104,6 +104,9 @@ class SyncApi {
     if (method == 'POST' && path == '/api/blob') {
       return _putBlob(request);
     }
+    if (method == 'POST' && path == '/api/blobs/check') {
+      return _checkBlobs(request);
+    }
 
     return _replyJson(request, HttpStatus.notFound, {'error': 'not_found'});
   }
@@ -251,8 +254,7 @@ class SyncApi {
     }
   }
 
-  Future<void> _getBlob(HttpRequest request, String hash) async {
-    final file = store.blobFile(hash);
+  Future<void> _getBlob(HttpRequest request, String hash) async {    final file = store.blobFile(hash);
     if (file == null) {
       return _replyJson(request, HttpStatus.notFound, {'error': 'no_blob'});
     }
@@ -265,6 +267,26 @@ class SyncApi {
     }
     await request.response.addStream(file.openRead());
     await request.response.close();
+  }
+
+  /// Reports which of the offered hashes the server already stores.
+  ///
+  /// Lets a client ask once, in bulk, what it still needs to send, instead of
+  /// probing file by file.
+  Future<void> _checkBlobs(HttpRequest request) async {
+    final body = await _readJsonObject(request);
+    final hashes = body?['hashes'];
+    if (hashes is! List) {
+      return _replyJson(request, HttpStatus.badRequest, {
+        'error': 'invalid_hashes',
+      });
+    }
+    final wanted = <String>[
+      for (final hash in hashes)
+        if (hash is String && hash.isNotEmpty) hash,
+    ];
+    final present = store.filterExistingBlobs(wanted);
+    return _replyJson(request, HttpStatus.ok, {'present': present.toList()});
   }
 
   // ===== WebSocket =====

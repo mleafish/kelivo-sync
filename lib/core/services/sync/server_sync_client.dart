@@ -257,6 +257,30 @@ class ServerSyncClient {
     return true;
   }
 
+  /// Asks which of [hashes] the server already stores, in a single request.
+  Future<Set<String>> checkBlobs({
+    required Uri base,
+    required String token,
+    required List<String> hashes,
+  }) async {
+    if (hashes.isEmpty) return const <String>{};
+    final response = await _http
+        .post(
+          _endpoint(base, '/api/blobs/check'),
+          headers: {..._authHeaders(token), 'content-type': 'application/json'},
+          body: jsonEncode({'hashes': hashes}),
+        )
+        .timeout(timeout);
+    _ensureOk(response);
+    final body = _decodeObject(response);
+    final present = body['present'];
+    if (present is! List) return const <String>{};
+    return {
+      for (final hash in present)
+        if (hash is String && hash.isNotEmpty) hash,
+    };
+  }
+
   Future<void> downloadBlob({
     required Uri base,
     required String token,

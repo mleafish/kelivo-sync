@@ -278,6 +278,31 @@ class SyncStore {
   bool hasBlob(String hash) =>
       _db.select('SELECT hash FROM blobs WHERE hash = ?;', [hash]).isNotEmpty;
 
+  /// Which of [hashes] the server already holds.
+  ///
+  /// Batched so a client bringing up a large library answers "what do you still
+  /// need from me" in one round trip instead of one per file.
+  Set<String> filterExistingBlobs(List<String> hashes) {
+    final present = <String>{};
+    const chunkSize = 400;
+    for (var start = 0; start < hashes.length; start += chunkSize) {
+      final end = start + chunkSize > hashes.length
+          ? hashes.length
+          : start + chunkSize;
+      final slice = hashes.sublist(start, end);
+      if (slice.isEmpty) continue;
+      final placeholders = List.filled(slice.length, '?').join(', ');
+      final rows = _db.select(
+        'SELECT hash FROM blobs WHERE hash IN ($placeholders);',
+        slice,
+      );
+      for (final row in rows) {
+        present.add(row['hash'] as String);
+      }
+    }
+    return present;
+  }
+
   File? blobFile(String hash) {
     if (!hasBlob(hash)) return null;
     final file = _blobFile(hash);

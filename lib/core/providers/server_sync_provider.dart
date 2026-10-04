@@ -10,6 +10,7 @@ import '../database/app_database.dart';
 import '../database/business_preferences.dart';
 import '../database/chat_database_repository.dart';
 import '../services/backup/backup_activity.dart';
+import '../services/sync/server_blob_sync.dart';
 import '../services/sync/server_sync_client.dart';
 import '../services/sync/server_sync_service.dart';
 
@@ -34,6 +35,7 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
       repository: repository,
       deviceId: _deviceId,
     );
+    _blobSync = ServerBlobSync(repository: repository, client: _client);
     _loadPersistedState();
   }
 
@@ -48,6 +50,7 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
   final Duration _pollInterval;
   final bool Function()? _shouldSkip;
   late final ServerSyncService _service;
+  late final ServerBlobSync _blobSync;
   String? _cachedDeviceId;
 
   // ===== Persisted =====
@@ -231,6 +234,16 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
         report = await _service.applyRemote(report.retryable);
       }
 
+      // Rows that just arrived may point at files this device has never held.
+      final assetIds = <String>[
+        for (final record in [...page.records, ...report.retryable])
+          if (record.namespace == 'asset' && record.payload['id'] is String)
+            record.payload['id'] as String,
+      ];
+      if (assetIds.isNotEmpty) {
+        await _blobSync.pull(base: base, token: _token, assetIds: assetIds);
+      }
+
       _localRev = page.rev;
       await _persistState();
       if (!page.hasMore) break;
@@ -247,29 +260,29 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _push() async {
     final base = Uri.parse(_serverUrl);
     final collected = await _service.collectChanges(cursors: _cursors);
-    if (collected.records.isEmpty) {
-      final signature = await _signature();
-      if (signature != _publishedSignature) {
-        _publishedSignature = signature;
-        await _persistState();
+
+    if (collected.records.isNotEmpty) {
+      final result = await _client.push(
+        base: base,
+        token: _token,
+        records: collected.records,
+      );
+      if (result.rev > _localRev) _localRev = result.rev;
+
+      // Whatever the server kept instead of what was sent is the current
+      // truth; writing it back is what stops this device disagreeing forever.
+      if (result.rejected.isNotEmpty) {
+        await _service.applyRemote(result.rejected);
       }
-      return;
+      _cursors = {..._cursors, ...collected.cursors};
     }
 
-    final result = await _client.push(
-      base: base,
-      token: _token,
-      records: collected.records,
-    );
-    if (result.rev > _localRev) _localRev = result.rev;
+    // Attachment bytes travel separately from the rows that point at them, and
+    // this runs on every pass so a transfer that failed last time is retried
+    // without waiting for another edit. In a settled state it costs one
+    // request and moves nothing.
+    await _blobSync.push(base: base, token: _token);
 
-    // Whatever the server kept instead of what was sent is the current truth;
-    // writing it back is what stops this device from disagreeing forever.
-    if (result.rejected.isNotEmpty) {
-      await _service.applyRemote(result.rejected);
-    }
-
-    _cursors = {..._cursors, ...collected.cursors};
     _publishedSignature = await _signature();
     await _persistState();
   }
