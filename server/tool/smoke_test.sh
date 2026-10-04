@@ -16,8 +16,14 @@ WORKDIR="$(mktemp -d)"
 BASE="http://127.0.0.1:${PORT}"
 
 cleanup() {
+  local code=$?
+  if [ "$code" -ne 0 ] && [ -f "$WORKDIR/server.log" ]; then
+    echo "--- server log (last 30 lines) ---" >&2
+    tail -30 "$WORKDIR/server.log" >&2 || true
+  fi
   if [ -n "${SERVER_PID:-}" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi
   rm -rf "$WORKDIR"
+  return "$code"
 }
 trap cleanup EXIT
 
@@ -74,23 +80,23 @@ echo "== messages from two devices both survive =="
 push "$TOKEN_A" '[
   {"namespace":"conversation","id":"c1","payload":{"id":"c1","title":"from A","updated_at":1000},"updatedAt":1000,"deviceId":"dev-a"},
   {"namespace":"message","id":"m1","payload":{"id":"m1","conversation_id":"c1","text":"hello from A"},"updatedAt":1000,"deviceId":"dev-a"}
-]' > "$WORKDIR/p1.json"
+]' "$WORKDIR/p1.json"
 [ "$(json 'd["accepted"]' < "$WORKDIR/p1.json")" = "2" ] || fail "device A push was not accepted"
 pass "device A published its conversation and message"
 
 # Device B pulls, then adds its own message to the SAME conversation.
-curl -sf "$BASE/api/changes?since=0" "${auth_b[@]}" > "$WORKDIR/b1.json"
+get "/api/changes?since=0" "$TOKEN_B" "$WORKDIR/b1.json"
 [ "$(json 'len(d["changes"])' < "$WORKDIR/b1.json")" = "2" ] || fail "device B did not see both records"
 pass "device B received device A's records"
 
 push "$TOKEN_B" '[
   {"namespace":"message","id":"m2","payload":{"id":"m2","conversation_id":"c1","text":"hello from B"},"updatedAt":2000,"deviceId":"dev-b"}
-]' > "$WORKDIR/p2.json"
+]' "$WORKDIR/p2.json"
 [ "$(json 'd["accepted"]' < "$WORKDIR/p2.json")" = "1" ] || fail "device B push was not accepted"
 
 # Device A pulls: it must now hold BOTH messages. This is the property that
 # matters most -- two devices appending to one conversation must not lose either.
-curl -sf "$BASE/api/changes?since=0" "${auth_a[@]}" > "$WORKDIR/a2.json"
+get "/api/changes?since=0" "$TOKEN_A" "$WORKDIR/a2.json"
 count=$(json 'len([c for c in d["changes"] if c["namespace"]=="message"])' < "$WORKDIR/a2.json")
 [ "$count" = "2" ] || fail "expected 2 messages after merge, saw $count"
 pass "both devices' messages survive (union, not overwrite)"
@@ -99,7 +105,7 @@ echo "== stale write loses and is told what won =="
 # Device B writes an older version of the same record.
 push "$TOKEN_B" '[
   {"namespace":"conversation","id":"c1","payload":{"id":"c1","title":"stale edit"},"updatedAt":500,"deviceId":"dev-b"}
-]' > "$WORKDIR/p3.json"
+]' "$WORKDIR/p3.json"
 [ "$(json 'd["accepted"]' < "$WORKDIR/p3.json")" = "0" ] || fail "stale write was accepted"
 [ "$(json 'len(d["rejected"])' < "$WORKDIR/p3.json")" = "1" ] || fail "stale write was not reported back"
 winner=$(json 'd["rejected"][0]["payload"]["title"]' < "$WORKDIR/p3.json")
@@ -109,9 +115,9 @@ pass "stale write rejected, winner returned (title=$winner)"
 echo "== deletions propagate =="
 push "$TOKEN_A" '[
   {"namespace":"tombstone","id":"[\"conversation\",\"c1\"]","payload":{"scope":"conversation","entity_id":"c1","deleted_at":3000},"updatedAt":3000,"deviceId":"dev-a"}
-]' > "$WORKDIR/p4.json"
+]' "$WORKDIR/p4.json"
 [ "$(json 'd["accepted"]' < "$WORKDIR/p4.json")" = "1" ] || fail "tombstone was not accepted"
-curl -sf "$BASE/api/changes?since=0" "${auth_b[@]}" > "$WORKDIR/b4.json"
+get "/api/changes?since=0" "$TOKEN_B" "$WORKDIR/b4.json"
 found=$(json 'len([c for c in d["changes"] if c["namespace"]=="tombstone"])' < "$WORKDIR/b4.json")
 [ "$found" = "1" ] || fail "device B did not receive the tombstone"
 pass "tombstone reached the other device"
@@ -152,7 +158,7 @@ for _ in $(seq 1 40); do
   sleep 0.5
 done
 TOKEN_C=$(curl -sf -X POST "$BASE/api/login" -d "{\"password\":\"$PASSWORD\"}" | json 'd["token"]')
-curl -sf "$BASE/api/changes?since=0" -H "Authorization: Bearer $TOKEN_C" > "$WORKDIR/after.json"
+get "/api/changes?since=0" "$TOKEN_C" "$WORKDIR/after.json"
 after=$(json 'len(d["changes"])' < "$WORKDIR/after.json")
 [ "$after" -ge 5 ] || fail "records were lost across a restart (saw $after)"
 pass "records and the signing key survived a restart"
