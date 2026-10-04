@@ -62,8 +62,7 @@ class ServerSyncService {
     final changedParents = <String, List<String>>{};
 
     for (final spec in syncTableSpecs) {
-      final cursorColumn = _cursorColumn(spec);
-      if (cursorColumn == null) continue;
+      if (spec.cursorExpression == null) continue;
 
       final since = cursors[spec.namespace] ?? 0;
       final rows = await _repository.syncSelect(
@@ -76,9 +75,12 @@ class ServerSyncService {
       final parentKeys = <String>[];
       var highest = since;
       for (final row in rows) {
-        records.add(_recordFromRow(spec, row));
-        final value = row[cursorColumn];
-        if (value is int && value > highest) highest = value;
+        // The cursor advances on the same value the record is ordered by, so a
+        // message whose updated_at is null still moves it forward rather than
+        // being re-sent on every single pass.
+        final record = _recordFromRow(spec, row);
+        records.add(record);
+        if (record.updatedAt > highest) highest = record.updatedAt;
         final key = row[spec.keyColumns.first];
         if (key != null) parentKeys.add('$key');
       }
@@ -150,21 +152,43 @@ class ServerSyncService {
 
   /// The value the server orders this record by.
   ///
-  /// Prefers the table's own timestamp. A join table has none, so it borrows
-  /// whatever timestamp its columns carry and otherwise falls back to now --
-  /// it is published only because its parent moved, and the parent carries the
-  /// real ordering.
+  /// Follows the cursor expression's own preference order, so a message whose
+  /// `updated_at` is still null is ordered by `timestamp` -- the moment it was
+  /// written. Falling back to "now" instead would stamp an untouched message
+  /// with a time newer than any edit another device has made to it, and the
+  /// server would then keep the stale copy.
   static int _orderingValue(SyncTableSpec spec, Map<String, Object?> row) {
-    final cursorColumn = _cursorColumn(spec);
-    if (cursorColumn != null) {
-      final value = row[cursorColumn];
+    for (final column in _cursorColumns(spec)) {
+      final value = row[column];
       if (value is int) return value;
     }
-    for (final column in const ['updated_at', 'created_at', 'deleted_at']) {
+    // A table with no cursor of its own borrows whatever timestamp it carries;
+    // it is published only because its parent moved, and the parent carries the
+    // real ordering.
+    for (final column in const [
+      'updated_at',
+      'created_at',
+      'timestamp',
+      'deleted_at',
+    ]) {
       final value = row[column];
       if (value is int) return value;
     }
     return DateTime.now().microsecondsSinceEpoch;
+  }
+
+  /// The columns a cursor expression reads, in the order it prefers them.
+  ///
+  /// `COALESCE(updated_at, timestamp)` yields `[updated_at, timestamp]`.
+  static List<String> _cursorColumns(SyncTableSpec spec) {
+    final expression = spec.cursorExpression;
+    if (expression == null) return const <String>[];
+    return [
+      for (final match in RegExp(
+        r'[a-zA-Z_][a-zA-Z0-9_]*',
+      ).allMatches(expression))
+        if (match.group(0) != 'COALESCE') match.group(0)!,
+    ];
   }
 
   /// Stable identity of a row, built from its key columns.
@@ -173,16 +197,6 @@ class ServerSyncService {
   /// user data and any separator chosen here could occur inside one.
   static String idFromRow(SyncTableSpec spec, Map<String, Object?> row) =>
       jsonEncode([for (final column in spec.keyColumns) row[column]]);
-
-  /// The bare column behind a cursor expression: `COALESCE(updated_at,
-  /// timestamp)` reads `updated_at`.
-  static String? _cursorColumn(SyncTableSpec spec) {
-    final expression = spec.cursorExpression;
-    if (expression == null) return null;
-    final open = expression.indexOf('(');
-    final source = open >= 0 ? expression.substring(open + 1) : expression;
-    return RegExp(r'[a-zA-Z_][a-zA-Z0-9_]*').firstMatch(source)?.group(0);
-  }
 
   // ===== Incoming =====
 

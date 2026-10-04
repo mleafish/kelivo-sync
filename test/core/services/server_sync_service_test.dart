@@ -95,7 +95,9 @@ void main() {
     expect(fallback, isNotNull);
 
     final collected = await service.collectChanges();
-    final message = collected.records.firstWhere((r) => r.namespace == 'message');
+    final message = collected.records.firstWhere(
+      (r) => r.namespace == 'message',
+    );
     expect(message.updatedAt, fallback);
   });
 
@@ -136,27 +138,29 @@ void main() {
     expect(titles.single['title'], 'Renamed elsewhere');
   });
 
-  test('applying the same batch twice changes nothing the second time',
-      () async {
-    await seed();
-    final collected = await service.collectChanges();
+  test(
+    'applying the same batch twice changes nothing the second time',
+    () async {
+      await seed();
+      final collected = await service.collectChanges();
 
-    await service.applyRemote(collected.records);
-    final snapshotAfterFirst = await repository.syncSelect(
-      'SELECT id, title FROM conversation_rows ORDER BY id',
-    );
-    final messagesAfterFirst = await messageCount();
-
-    await service.applyRemote(collected.records);
-
-    expect(
-      await repository.syncSelect(
+      await service.applyRemote(collected.records);
+      final snapshotAfterFirst = await repository.syncSelect(
         'SELECT id, title FROM conversation_rows ORDER BY id',
-      ),
-      snapshotAfterFirst,
-    );
-    expect(await messageCount(), messagesAfterFirst);
-  });
+      );
+      final messagesAfterFirst = await messageCount();
+
+      await service.applyRemote(collected.records);
+
+      expect(
+        await repository.syncSelect(
+          'SELECT id, title FROM conversation_rows ORDER BY id',
+        ),
+        snapshotAfterFirst,
+      );
+      expect(await messageCount(), messagesAfterFirst);
+    },
+  );
 
   test('a conversation deleted elsewhere is removed locally', () async {
     await seed();
