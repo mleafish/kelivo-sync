@@ -111,7 +111,9 @@ class ServerSyncService {
   }
 
   /// Every row of every synced table, for a first run.
-  Future<ServerCollectResult> collectEverything({int limitPerTable = 5000}) async {
+  Future<ServerCollectResult> collectEverything({
+    int limitPerTable = 5000,
+  }) async {
     final records = <ServerSyncRecord>[];
     for (final spec in syncTableSpecs) {
       final rows = await _repository.syncSelect(

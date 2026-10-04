@@ -109,8 +109,10 @@ class SyncServerException implements Exception {
 /// Holds no state of its own beyond the HTTP client: tokens and cursors belong
 /// to the caller, so a token can be replaced without rebuilding this.
 class ServerSyncClient {
-  ServerSyncClient({http.Client? httpClient, this.timeout = const Duration(seconds: 30)})
-    : _http = httpClient ?? http.Client();
+  ServerSyncClient({
+    http.Client? httpClient,
+    this.timeout = const Duration(seconds: 30),
+  }) : _http = httpClient ?? http.Client();
 
   final http.Client _http;
   final Duration timeout;
@@ -118,10 +120,7 @@ class ServerSyncClient {
   void close() => _http.close();
 
   /// Exchanges the shared password for a token.
-  Future<String> login({
-    required Uri base,
-    required String password,
-  }) async {
+  Future<String> login({required Uri base, required String password}) async {
     final response = await _http
         .post(
           _endpoint(base, '/api/login'),
@@ -152,9 +151,10 @@ class ServerSyncClient {
     required int since,
     int limit = 200,
   }) async {
-    final uri = _endpoint(base, '/api/changes').replace(
-      queryParameters: {'since': '$since', 'limit': '$limit'},
-    );
+    final uri = _endpoint(
+      base,
+      '/api/changes',
+    ).replace(queryParameters: {'since': '$since', 'limit': '$limit'});
     final response = await _http
         .get(uri, headers: _authHeaders(token))
         .timeout(timeout);
@@ -223,17 +223,16 @@ class ServerSyncClient {
     });
     request.contentLength = length;
     unawaited(
-      file
-          .openRead()
-          .pipe(request.sink)
-          .catchError((Object error) {
-            request.sink.addError(error);
-          }),
+      file.openRead().pipe(request.sink).catchError((Object error) {
+        request.sink.addError(error);
+      }),
     );
-    final streamed = await _http.send(request).timeout(
-      // Generous: this is bounded by the file's size, not by latency.
-      Duration(seconds: 30 + length ~/ (256 * 1024)),
-    );
+    final streamed = await _http
+        .send(request)
+        .timeout(
+          // Generous: this is bounded by the file's size, not by latency.
+          Duration(seconds: 30 + length ~/ (256 * 1024)),
+        );
     final response = await http.Response.fromStream(streamed);
     _ensureOk(response);
     final body = _decodeObject(response);
@@ -287,10 +286,8 @@ class ServerSyncClient {
     required String hash,
     required File destination,
   }) async {
-    final request = http.Request(
-      'GET',
-      _endpoint(base, '/api/blob/$hash'),
-    )..headers.addAll(_authHeaders(token));
+    final request = http.Request('GET', _endpoint(base, '/api/blob/$hash'))
+      ..headers.addAll(_authHeaders(token));
     final streamed = await _http.send(request).timeout(timeout);
     if (streamed.statusCode == 404) {
       throw const SyncServerException('服务器上找不到该文件', statusCode: 404);

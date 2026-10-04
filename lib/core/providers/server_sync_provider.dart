@@ -29,10 +29,7 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
     @visibleForTesting Duration? debugPollInterval,
   }) : _client = debugClient ?? ServerSyncClient(),
        _pollInterval = debugPollInterval ?? const Duration(milliseconds: 1500) {
-    _service = ServerSyncService(
-      repository: repository,
-      deviceId: _deviceId,
-    );
+    _service = ServerSyncService(repository: repository, deviceId: _deviceId);
     _blobSync = ServerBlobSync(repository: repository, client: _client);
     _loadPersistedState();
   }
@@ -324,7 +321,9 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
       try {
         if (await file.exists()) {
           final stat = await file.stat();
-          buffer.write('$suffix:${stat.size}:${stat.modified.millisecondsSinceEpoch};');
+          buffer.write(
+            '$suffix:${stat.size}:${stat.modified.millisecondsSinceEpoch};',
+          );
         } else {
           buffer.write('$suffix:-;');
         }

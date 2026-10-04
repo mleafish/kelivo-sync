@@ -828,7 +828,8 @@ class _BackupPageState extends State<BackupPage> {
                                   ? l10n.backupPageS3SyncNow
                                   : _syncStatusDetail(syncVm, l10n))
                             : null,
-                        onTap: () => _showServerSyncSettingsPage(context, syncVm),
+                        onTap: () =>
+                            _showServerSyncSettingsPage(context, syncVm),
                       ),
                     ],
                     _iosDivider(context),
@@ -2673,7 +2674,8 @@ class _ServerSyncSettingsPage extends StatefulWidget {
   final ServerSyncProvider vm;
 
   @override
-  State<_ServerSyncSettingsPage> createState() => _ServerSyncSettingsPageState();
+  State<_ServerSyncSettingsPage> createState() =>
+      _ServerSyncSettingsPageState();
 }
 
 class _ServerSyncSettingsPageState extends State<_ServerSyncSettingsPage> {

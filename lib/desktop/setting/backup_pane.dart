@@ -992,9 +992,9 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                             controller: _syncServerUrl,
                             enabled: !syncVm.loggedIn,
                             style: const TextStyle(fontSize: 14),
-                            decoration: _deskInputDecoration(context).copyWith(
-                              hintText: 'https://sync.example.com',
-                            ),
+                            decoration: _deskInputDecoration(
+                              context,
+                            ).copyWith(hintText: 'https://sync.example.com'),
                           ),
                         ),
                       ),
