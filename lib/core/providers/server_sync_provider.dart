@@ -213,6 +213,11 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// Applies everything the server has that this device has not seen.
   Future<void> _pull() async {
     final base = Uri.parse(_serverUrl);
+    // Records whose parent has not arrived yet. Carried across pages, not just
+    // retried once: a page boundary can fall between a message and the
+    // conversation it belongs to, and retrying only within the page would drop
+    // that message for good.
+    final deferred = <ServerSyncRecord>[];
     var guard = 0;
     while (guard < 1000) {
       guard += 1;
@@ -223,16 +228,13 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
       );
       if (page.records.isEmpty) {
         if (page.rev > _localRev) _localRev = page.rev;
-        await _persistState();
         break;
       }
 
-      var report = await _service.applyRemote(page.records);
-      // Anything whose parent had not arrived yet gets one more chance now
-      // that the rest of the page has landed.
-      if (report.retryable.isNotEmpty) {
-        report = await _service.applyRemote(report.retryable);
-      }
+      final report = await _service.applyRemote([...deferred, ...page.records]);
+      deferred
+        ..clear()
+        ..addAll(report.retryable);
 
       // Rows that just arrived may point at files this device has never held.
       final assetIds = <String>[
@@ -247,6 +249,14 @@ class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
       _localRev = page.rev;
       await _persistState();
       if (!page.hasMore) break;
+    }
+
+    // Whatever is still waiting had no parent anywhere in the history, which
+    // means the two sides disagree about that row rather than that it arrived
+    // early. Applying it once more either succeeds or is dropped; leaving the
+    // revision unadvanced would re-fetch the same pages forever.
+    if (deferred.isNotEmpty) {
+      await _service.applyRemote(deferred);
     }
 
     // The database moved because of what the server sent, not because of

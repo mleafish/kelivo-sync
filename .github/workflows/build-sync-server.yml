@@ -42,63 +42,11 @@ jobs:
           dart compile exe bin/kelivo_sync_server.dart \
             -o kelivo-sync-server-linux-x64
 
-      - name: Smoke test (start, health check, stop)
+      - name: Smoke test (protocol, end to end)
         working-directory: server
         run: |
-          cat > /tmp/ci-config.json <<'EOF'
-          {
-            "password": "ci-smoke-test-password",
-            "dataDir": "/tmp/kelivo-sync-ci",
-            "host": "127.0.0.1",
-            "port": 18787
-          }
-          EOF
-          ./kelivo-sync-server-linux-x64 --config /tmp/ci-config.json &
-          SERVER_PID=$!
-          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
-          for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:18787/api/health > /tmp/health.json; then break; fi
-            sleep 0.5
-          done
-          echo "health: $(cat /tmp/health.json)"
-          grep -q '"ok":true' /tmp/health.json
-
-          # The password gate must actually reject a wrong password.
-          code=$(curl -s -o /dev/null -w '%{http_code}' \
-            -X POST http://127.0.0.1:18787/api/login \
-            -d '{"password":"wrong"}')
-          test "$code" = "401"
-          echo "wrong password -> $code"
-
-          # ...and accept the right one.
-          token=$(curl -sf -X POST http://127.0.0.1:18787/api/login \
-            -d '{"password":"ci-smoke-test-password"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
-          test -n "$token"
-          echo "login ok"
-
-          # A push must be visible to a later changes call.
-          curl -sf -X POST http://127.0.0.1:18787/api/push \
-            -H "Authorization: Bearer $token" \
-            -d '{"records":[{"namespace":"conversation","id":"c1","payload":{"title":"hi"},"updatedAt":100,"deviceId":"dev-a"}]}' \
-            > /tmp/push.json
-          echo "push: $(cat /tmp/push.json)"
-          grep -q '"accepted":1' /tmp/push.json
-
-          curl -sf "http://127.0.0.1:18787/api/changes?since=0" \
-            -H "Authorization: Bearer $token" > /tmp/changes.json
-          grep -q '"id":"c1"' /tmp/changes.json
-          echo "changes ok"
-
-          # A stale write must lose and come back with the winner.
-          curl -sf -X POST http://127.0.0.1:18787/api/push \
-            -H "Authorization: Bearer $token" \
-            -d '{"records":[{"namespace":"conversation","id":"c1","payload":{"title":"old"},"updatedAt":50,"deviceId":"dev-b"}]}' \
-            > /tmp/stale.json
-          echo "stale push: $(cat /tmp/stale.json)"
-          grep -q '"accepted":0' /tmp/stale.json
-          grep -q '"rejected"' /tmp/stale.json
-
-          echo "SMOKE TEST PASSED"
+          chmod +x tool/smoke_test.sh
+          tool/smoke_test.sh "$PWD/kelivo-sync-server-linux-x64"
 
       # Uploaded before the analyzer runs: a lint complaint should not cost the
       # artifact that the smoke test just proved works.
