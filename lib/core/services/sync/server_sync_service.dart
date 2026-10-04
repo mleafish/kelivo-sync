@@ -39,10 +39,7 @@ class ServerApplyReport {
 /// own, so a payload always has exactly the shape of the row it describes and
 /// the two ends cannot drift apart as the schema changes.
 class ServerSyncService {
-  ServerSyncService({
-    required ChatDatabaseRepository repository,
-    required this.deviceId,
-  }) : _repository = repository;
+  ServerSyncService({required this._repository, required this.deviceId});
 
   /// Names this install when the server has to break a timestamp tie.
   final String deviceId;

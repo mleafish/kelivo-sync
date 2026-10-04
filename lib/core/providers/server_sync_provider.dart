@@ -23,14 +23,12 @@ import '../services/sync/server_sync_service.dart';
 class ServerSyncProvider extends ChangeNotifier with WidgetsBindingObserver {
   ServerSyncProvider({
     required ChatDatabaseRepository repository,
-    required BusinessPreferences preferences,
-    required bool Function()? shouldSkip,
+    required this._preferences,
+    this._shouldSkip,
     ServerSyncClient? debugClient,
     @visibleForTesting Duration? debugPollInterval,
-  }) : _preferences = preferences,
-       _client = debugClient ?? ServerSyncClient(),
-       _pollInterval = debugPollInterval ?? const Duration(milliseconds: 1500),
-       _shouldSkip = shouldSkip {
+  }) : _client = debugClient ?? ServerSyncClient(),
+       _pollInterval = debugPollInterval ?? const Duration(milliseconds: 1500) {
     _service = ServerSyncService(
       repository: repository,
       deviceId: _deviceId,

@@ -11,11 +11,7 @@ import 'server_sync_client.dart';
 /// already holds in `asset_rows` and stores the bytes there. Identity is the
 /// sha256, which is also why the same photo on two devices costs one object.
 class ServerBlobSync {
-  ServerBlobSync({
-    required ChatDatabaseRepository repository,
-    required ServerSyncClient client,
-  }) : _repository = repository,
-       _client = client;
+  ServerBlobSync({required this._repository, required this._client});
 
   final ChatDatabaseRepository _repository;
   final ServerSyncClient _client;
