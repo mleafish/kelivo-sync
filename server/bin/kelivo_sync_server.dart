@@ -1,16 +1,45 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:kelivo_sync_server/src/api.dart';
 import 'package:kelivo_sync_server/src/config.dart';
 import 'package:kelivo_sync_server/src/hub.dart';
 import 'package:kelivo_sync_server/src/store.dart';
+import 'package:sqlite3/open.dart' as sqlite_open;
+
+/// Picks the SQLite shared library the way a distribution actually ships it.
+///
+/// Debian and Ubuntu install the runtime library as `libsqlite3.so.0`; the bare
+/// `libsqlite3.so` name comes from the -dev package and is usually absent on a
+/// server. Trying the plain name first, as the sqlite3 package does, makes the
+/// binary refuse to start on a machine that has SQLite perfectly well installed.
+void _configureSqlite() {
+  if (!Platform.isLinux) return;
+  sqlite_open.open.overrideFor(sqlite_open.OperatingSystem.linux, () {
+    final tried = <String>[];
+    for (final name in const ['libsqlite3.so.0', 'libsqlite3.so']) {
+      try {
+        return DynamicLibrary.open(name);
+      } on ArgumentError catch (error) {
+        tried.add('  $name: ${error.message}');
+      }
+    }
+    throw StateError(
+      'Could not load SQLite. On Debian or Ubuntu install it with:\n'
+      '  apt-get install libsqlite3-0\n'
+      'Tried:\n${tried.join('\n')}',
+    );
+  });
+}
 
 /// Entry point for the Kelivo sync server.
 ///
 /// Run it with a config file (`config.json` beside the binary by default), or
 /// point at one with `--config` / KELIVO_SYNC_CONFIG.
 Future<void> main(List<String> args) async {
+  _configureSqlite();
+
   String? configPath;
   for (var i = 0; i < args.length; i++) {
     if (args[i] == '--config' && i + 1 < args.length) {

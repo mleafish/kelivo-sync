@@ -168,6 +168,6 @@ sudo systemctl start kelivo-sync
 
 ## 注意
 
-- 需要系统有 `libsqlite3`。Debian/Ubuntu 上 `apt install libsqlite3-0`，绝大多数发行版已经自带。
+- 需要系统有 `libsqlite3`（Debian/Ubuntu：`apt install libsqlite3-0`）。**不需要装 `-dev` 包**——服务端会自己找运行时库名 `libsqlite3.so.0`，再回退到 `libsqlite3.so`。找不到时会打印出该装什么，而不是抛一段 Dart 堆栈。
 - 服务端挂了不影响客户端使用，本地数据照常读写；恢复后自动追上。
 - **一台服务器只服务一个人**。密码是单密码、没有多用户隔离，不要把它共享给别人的设备。
