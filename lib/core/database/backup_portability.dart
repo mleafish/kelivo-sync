@@ -16,6 +16,12 @@ final class BackupPortability {
     'environment_rootfs_selection_v1',
     'environment_proot_options_v1',
     'environment_variables_v1',
+    // Sync bookkeeping is per-install. `s3_sync_config_v1` carries the device
+    // id that names this install's snapshot; letting it travel would hand a
+    // second device the same id, and the two would overwrite each other's
+    // objects. `s3_sync_state_v1` is that same install's cursors.
+    's3_sync_config_v1',
+    's3_sync_state_v1',
   };
 
   static bool _isLinked(BusinessEntityValue row) =>
