@@ -20,8 +20,21 @@ concurrency:
 
 jobs:
   linux:
-    name: Sync server (Linux x64)
-    runs-on: ubuntu-latest
+    name: Sync server (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The binary is native code, so the architecture it will run on has to
+          # be decided at build time. Both are published so a deployment does
+          # not depend on the kind of machine it lands on.
+          - runner: ubuntu-latest
+            label: Linux x64
+            artifact: linux-x64
+          - runner: ubuntu-24.04-arm
+            label: Linux arm64
+            artifact: linux-arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -40,21 +53,21 @@ jobs:
         working-directory: server
         run: |
           dart compile exe bin/kelivo_sync_server.dart \
-            -o kelivo-sync-server-linux-x64
+            -o kelivo-sync-server-${{ matrix.artifact }}
 
       - name: Smoke test (protocol, end to end)
         working-directory: server
         run: |
           chmod +x tool/smoke_test.sh
-          tool/smoke_test.sh "$PWD/kelivo-sync-server-linux-x64"
+          tool/smoke_test.sh "$PWD/kelivo-sync-server-${{ matrix.artifact }}"
 
       # Uploaded before the analyzer runs: a lint complaint should not cost the
       # artifact that the smoke test just proved works.
       - name: Upload server binary
         uses: actions/upload-artifact@v4
         with:
-          name: Kelivo-Sync-Server
-          path: server/kelivo-sync-server-linux-x64
+          name: Kelivo-Sync-Server-${{ matrix.artifact }}
+          path: server/kelivo-sync-server-${{ matrix.artifact }}
           if-no-files-found: error
 
       - name: Analyze
